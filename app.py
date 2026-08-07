@@ -5,17 +5,8 @@ def main():
 
     loader = DataLoader()
 
-    df = loader.load_csv("data/raw/employees.csv")
+    df = loader.load("data/raw/employees.xlsx")
 
-    print("\n========== DATASET INFORMATION ==========\n")
-
-    print(f"Rows: {df.shape[0]}")
-    print(f"Columns: {df.shape[1]}")
-
-    print("\nColumn Names:")
-    print(df.columns.tolist())
-
-    print("\nFirst Five Rows:")
     print(df.head())
 
 
