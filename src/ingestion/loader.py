@@ -11,6 +11,10 @@ the file type and loads datasets into a Pandas DataFrame.
 from pathlib import Path
 import pandas as pd
 
+from src.utils.logger import setup_logger
+
+logger = setup_logger()
+
 
 class DataLoader:
     """
@@ -26,7 +30,7 @@ class DataLoader:
     """
 
     def __init__(self):
-        print("DataLoader initialized.")
+        logger.info("DataLoader initialized.")
 
     def load(self, file_path: str) -> pd.DataFrame:
         """
@@ -68,7 +72,7 @@ class DataLoader:
         Internal method for loading CSV files.
         """
 
-        print("Loading CSV file...")
+        logger.info(f"Loading CSV file: {path.name}")
 
         return pd.read_csv(path)
 
@@ -77,6 +81,6 @@ class DataLoader:
         Internal method for loading Excel files.
         """
 
-        print("Loading Excel file...")
+        logger.info(f"Loading Excel file: {path.name}")
 
         return pd.read_excel(path)
