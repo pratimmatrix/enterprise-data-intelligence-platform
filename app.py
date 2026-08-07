@@ -1,4 +1,5 @@
 from src.ingestion.loader import DataLoader
+from src.ingestion.validator import DataValidator
 
 
 def main():
@@ -7,7 +8,9 @@ def main():
 
     df = loader.load("data/raw/employees.xlsx")
 
-    print(df.head())
+    validator = DataValidator()
+
+    validator.validate(df)
 
 
 if __name__ == "__main__":
