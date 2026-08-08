@@ -1,84 +1,82 @@
+"""
+Enterprise Data Intelligence Platform
+
+Author: Pratim Mistry
+
+Main application entry point.
+"""
+
 from src.ingestion.loader import DataLoader
 from src.ingestion.validator import DataValidator
+
 from src.profiling.metadata import MetadataExtractor
 from src.profiling.profiler import DataProfiler
 from src.profiling.quality import DataQualityEngine
-from src.profiling.column_profiler import ColumnProfiler
-from src.profiling.statistics import StatisticalAnalyzer
+from src.profiling.relationships import RelationshipAnalyzer
 
 
 def main():
 
-    # ==============================
-    # 1. LOAD DATA
-    # ==============================
+    # ==========================================
+    # 1. DATA INGESTION
+    # ==========================================
 
     loader = DataLoader()
 
     df = loader.load("data/raw/bank-full.csv")
 
 
-    # ==============================
+    # ==========================================
     # 2. DATA VALIDATION
-    # ==============================
+    # ==========================================
 
     validator = DataValidator()
 
     validator.validate(df)
 
 
-    # ==============================
+    # ==========================================
     # 3. DATASET METADATA
-    # ==============================
+    # ==========================================
 
     metadata = MetadataExtractor()
 
     metadata.extract(df)
 
 
-    # ==============================
+    # ==========================================
     # 4. DATA PROFILING
-    # ==============================
+    # ==========================================
 
     profiler = DataProfiler()
 
-    profile = profiler.profile(df)
-
-    profiler.display(profile)
+    profiler.profile(df)
 
 
-    # ==============================
-    # 5. DATA QUALITY ANALYSIS
-    # ==============================
+    # ==========================================
+    # 5. DATA QUALITY
+    # ==========================================
 
-    quality_engine = DataQualityEngine()
+    quality = DataQualityEngine()
 
-    quality_results = quality_engine.analyze(df)
-
-    quality_engine.display(quality_results)
+    quality.analyze(df)
 
 
-    # ==============================
-    # 6. COLUMN-LEVEL INTELLIGENCE
-    # ==============================
+    # ==========================================
+    # 6. RELATIONSHIP INTELLIGENCE
+    # ==========================================
 
-    column_profiler = ColumnProfiler()
+    relationship_analyzer = RelationshipAnalyzer()
 
-    column_results = column_profiler.profile(df)
+    relationship_analyzer.analyze(
+        df,
+        target="y"
+    )
 
-    column_profiler.display(column_results)
 
-
-    # ==============================
-    # 7. STATISTICAL INTELLIGENCE
-    # ==============================
-
-    statistical_analyzer = StatisticalAnalyzer()
-
-    statistical_results = statistical_analyzer.analyze(df)
-
-    statistical_analyzer.display(statistical_results)
-
+# ==========================================
+# APPLICATION ENTRY POINT
+# ==========================================
 
 if __name__ == "__main__":
     main()
