@@ -1,6 +1,7 @@
 from src.modeling.ModelPredictor import ModelPredictor
 from src.business_rules.BusinessRuleEngine import BusinessRuleEngine
 from src.insights.InsightEngine import InsightEngine
+from src.explainability.ExplainabilityEngine import ExplainabilityEngine
 
 
 class DecisionEngine:
@@ -9,26 +10,32 @@ class DecisionEngine:
 
         print("DecisionEngine initialized.")
 
-        # ----------------------------------------------------
+        # ====================================================
         # ML PREDICTOR
-        # ----------------------------------------------------
+        # ====================================================
 
         self.predictor = ModelPredictor()
 
-        # ----------------------------------------------------
+        # ====================================================
         # BUSINESS RULE ENGINE
-        # ----------------------------------------------------
+        # ====================================================
 
         self.business_rules = BusinessRuleEngine()
 
-        # ----------------------------------------------------
+        # ====================================================
         # INSIGHT ENGINE
-        # ----------------------------------------------------
+        # ====================================================
 
         self.insight_engine = InsightEngine()
 
+        # ====================================================
+        # EXPLAINABILITY ENGINE
+        # ====================================================
+
+        self.explainability_engine = ExplainabilityEngine()
+
     # ========================================================
-    # RUN DECISION
+    # RUN COMPLETE DECISION PIPELINE
     # ========================================================
 
     def run(
@@ -86,7 +93,7 @@ class DecisionEngine:
         )
 
         # ====================================================
-        # STEP 3: COMBINE ML + BUSINESS DECISION
+        # COMBINE ML + BUSINESS DECISION
         # ====================================================
 
         final_result = {
@@ -113,11 +120,13 @@ class DecisionEngine:
         }
 
         # ====================================================
-        # STEP 4: GENERATE BUSINESS INSIGHTS
+        # STEP 3: BUSINESS INSIGHTS
         # ====================================================
 
         print()
-        print("Step 3: Generating business insights...")
+        print(
+            "Step 3: Generating business insights..."
+        )
 
         insight_result = (
             self.insight_engine.generate_insights(
@@ -127,6 +136,35 @@ class DecisionEngine:
 
         final_result["insights"] = (
             insight_result["insights"]
+        )
+
+        # ====================================================
+        # STEP 4: MODEL EXPLANATION
+        # ====================================================
+
+        print()
+        print(
+            "Step 4: Generating model explanation..."
+        )
+
+        explanation_result = (
+            self.explainability_engine
+            .generate_explanation(
+                customer_data,
+                final_result
+            )
+        )
+
+        final_result["explanations"] = (
+            explanation_result[
+                "explanations"
+            ]
+        )
+
+        final_result["top_features"] = (
+            explanation_result[
+                "top_features"
+            ]
         )
 
         return final_result
@@ -204,7 +242,7 @@ if __name__ == "__main__":
     }
 
     # ========================================================
-    # RUN COMPLETE DECISION PIPELINE
+    # RUN COMPLETE PIPELINE
     # ========================================================
 
     result = engine.run(
@@ -252,8 +290,7 @@ if __name__ == "__main__":
     # ========================================================
 
     print()
-
-    print("Insights:")
+    print("Business Insights:")
 
     for insight in result["insights"]:
 
@@ -261,6 +298,33 @@ if __name__ == "__main__":
             f"  • {insight}"
         )
 
-    print()
+    # ========================================================
+    # MODEL EXPLANATIONS
+    # ========================================================
 
+    print()
+    print("Model Explanations:")
+
+    for explanation in result["explanations"]:
+
+        print(
+            f"  • {explanation}"
+        )
+
+    # ========================================================
+    # TOP FEATURES
+    # ========================================================
+
+    print()
+    print("Top Model Features:")
+
+    for item in result["top_features"]:
+
+        print(
+            f"  • "
+            f"{item['feature']}: "
+            f"{item['importance']:.4f}"
+        )
+
+    print()
     print("=" * 70)

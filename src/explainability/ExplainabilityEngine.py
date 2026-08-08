@@ -9,29 +9,19 @@ class ExplainabilityEngine:
         print("ExplainabilityEngine initialized.")
 
         # ====================================================
-        # MODEL LOCATION
+        # MODEL DIRECTORY
         # ====================================================
 
-        self.model_path = (
+        self.model_directory = (
             Path(__file__).resolve()
-            .parents[2]
+            .parents[3]
             / "models"
-            / "random_forest_pipeline.pkl"
         )
 
-        # If the model is stored outside the project,
-        # use the existing location as fallback.
-
-        if not self.model_path.exists():
-
-            self.model_path = (
-                Path.home()
-                / "Documents"
-                / "models"
-                / "random_forest_pipeline.pkl"
-            )
-
-        self.model = None
+        self.model_path = (
+            self.model_directory
+            / "random_forest_pipeline.pkl"
+        )
 
     # ========================================================
     # LOAD MODEL
@@ -42,10 +32,11 @@ class ExplainabilityEngine:
         if not self.model_path.exists():
 
             raise FileNotFoundError(
-                f"Model not found: {self.model_path}"
+                f"Trained model not found: "
+                f"{self.model_path}"
             )
 
-        self.model = joblib.load(
+        model = joblib.load(
             self.model_path
         )
 
@@ -54,96 +45,10 @@ class ExplainabilityEngine:
             f"{self.model_path}"
         )
 
-        return self.model
+        return model
 
     # ========================================================
-    # GET FEATURE IMPORTANCE
-    # ========================================================
-
-    def get_feature_importance(
-        self,
-        top_n=10
-    ):
-
-        if self.model is None:
-
-            self.load_model()
-
-        # ----------------------------------------------------
-        # Get preprocessing pipeline
-        # ----------------------------------------------------
-
-        preprocessor = (
-            self.model.named_steps[
-                "preprocessor"
-            ]
-        )
-
-        # ----------------------------------------------------
-        # Get classifier
-        # ----------------------------------------------------
-
-        classifier = (
-            self.model.named_steps[
-                "classifier"
-            ]
-        )
-
-        # ----------------------------------------------------
-        # Check Random Forest
-        # ----------------------------------------------------
-
-        if not hasattr(
-            classifier,
-            "feature_importances_"
-        ):
-
-            raise TypeError(
-                "Selected model does not "
-                "support feature_importances_."
-            )
-
-        # ----------------------------------------------------
-        # Get transformed feature names
-        # ----------------------------------------------------
-
-        feature_names = (
-            preprocessor
-            .get_feature_names_out()
-        )
-
-        # ----------------------------------------------------
-        # Get importance values
-        # ----------------------------------------------------
-
-        importances = (
-            classifier.feature_importances_
-        )
-
-        # ----------------------------------------------------
-        # Combine feature + importance
-        # ----------------------------------------------------
-
-        feature_importance = list(
-            zip(
-                feature_names,
-                importances
-            )
-        )
-
-        # ----------------------------------------------------
-        # Sort descending
-        # ----------------------------------------------------
-
-        feature_importance.sort(
-            key=lambda item: item[1],
-            reverse=True
-        )
-
-        return feature_importance[:top_n]
-
-    # ========================================================
-    # GENERATE EXPLANATION
+    # GENERATE CUSTOMER-SPECIFIC EXPLANATION
     # ========================================================
 
     def generate_explanation(
@@ -168,49 +73,39 @@ class ExplainabilityEngine:
         # Load model
         # ----------------------------------------------------
 
-        if self.model is None:
+        model = self.load_model()
 
-            self.load_model()
+        # ----------------------------------------------------
+        # Extract decision information
+        # ----------------------------------------------------
 
         prediction = (
-            decision_result[
-                "prediction"
-            ]
+            decision_result["prediction"]
         )
 
         probability = (
-            decision_result[
-                "probability_percent"
-            ]
+            decision_result["probability_percent"]
         )
 
         risk = (
-            decision_result[
-                "risk_category"
-            ]
-        )
-
-        # ----------------------------------------------------
-        # Get feature importance
-        # ----------------------------------------------------
-
-        top_features = (
-            self.get_feature_importance(
-                top_n=10
-            )
+            decision_result["risk_category"]
         )
 
         explanations = []
 
         # ====================================================
-        # MODEL RESULT
+        # PREDICTION EXPLANATION
         # ====================================================
 
         explanations.append(
-            f"The model predicts "
-            f"{prediction} with a probability "
-            f"of {probability:.2f}%."
+            f"The model predicts {prediction} "
+            f"with a probability of "
+            f"{probability:.2f}%."
         )
+
+        # ====================================================
+        # RISK EXPLANATION
+        # ====================================================
 
         explanations.append(
             f"The resulting model risk category "
@@ -218,116 +113,297 @@ class ExplainabilityEngine:
         )
 
         # ====================================================
-        # TOP MODEL FEATURES
+        # CUSTOMER-SPECIFIC FACTORS
         # ====================================================
 
         explanations.append(
-            "The Random Forest considers the "
-            "following features most important "
-            "for its predictions:"
+            "The following customer attributes "
+            "were considered when interpreting "
+            "the prediction:"
         )
 
-        for index, (
-            feature,
-            importance
-        ) in enumerate(
-            top_features,
-            start=1
-        ):
+        # ----------------------------------------------------
+        # Previous campaign history
+        # ----------------------------------------------------
 
-            # Remove sklearn transformer prefixes
-            clean_feature = (
-                feature
-                .replace(
-                    "numeric__",
-                    ""
-                )
-                .replace(
-                    "categorical__",
-                    ""
-                )
-            )
+        previous = customer_data.get(
+            "previous",
+            0
+        )
+
+        if previous == 0:
 
             explanations.append(
-                f"{index}. "
-                f"{clean_feature} "
-                f"(importance: "
-                f"{importance:.4f})"
+                "The customer has no previous "
+                "campaign contact history."
             )
 
-        # ====================================================
-        # CUSTOMER-SPECIFIC INFORMATION
-        # ====================================================
-
-        if "age" in customer_data:
+        else:
 
             explanations.append(
-                f"Customer age: "
-                f"{customer_data['age']}."
+                f"The customer has been contacted "
+                f"{previous} time(s) in previous campaigns."
             )
 
-        if "balance" in customer_data:
+        # ----------------------------------------------------
+        # Previous campaign outcome
+        # ----------------------------------------------------
 
-            balance = (
-                customer_data[
-                    "balance"
-                ]
+        poutcome = customer_data.get(
+            "poutcome",
+            "unknown"
+        )
+
+        if poutcome == "success":
+
+            explanations.append(
+                "The customer has a successful "
+                "previous campaign outcome, which "
+                "provides a positive historical signal."
             )
 
-            if balance > 0:
+        elif poutcome == "failure":
+
+            explanations.append(
+                "The customer has a previous failed "
+                "campaign outcome, which provides a "
+                "negative historical signal."
+            )
+
+        else:
+
+            explanations.append(
+                "There is no known outcome from a "
+                "previous campaign contact."
+            )
+
+        # ----------------------------------------------------
+        # Campaign intensity
+        # ----------------------------------------------------
+
+        campaign = customer_data.get(
+            "campaign",
+            0
+        )
+
+        if campaign <= 2:
+
+            explanations.append(
+                f"The current campaign contact count "
+                f"is {campaign}, indicating relatively "
+                f"low contact intensity."
+            )
+
+        elif campaign <= 5:
+
+            explanations.append(
+                f"The current campaign contact count "
+                f"is {campaign}, indicating moderate "
+                f"contact intensity."
+            )
+
+        else:
+
+            explanations.append(
+                f"The current campaign contact count "
+                f"is {campaign}, indicating high "
+                f"contact intensity."
+            )
+
+        # ----------------------------------------------------
+        # Contact channel
+        # ----------------------------------------------------
+
+        contact = customer_data.get(
+            "contact",
+            "unknown"
+        )
+
+        if contact == "cellular":
+
+            explanations.append(
+                "The customer was contacted through "
+                "a cellular communication channel."
+            )
+
+        elif contact == "telephone":
+
+            explanations.append(
+                "The customer was contacted through "
+                "a telephone communication channel."
+            )
+
+        else:
+
+            explanations.append(
+                "The communication channel is unknown."
+            )
+
+        # ----------------------------------------------------
+        # Contact duration
+        # ----------------------------------------------------
+
+        duration = customer_data.get(
+            "duration",
+            0
+        )
+
+        if duration >= 300:
+
+            explanations.append(
+                f"The current contact duration is "
+                f"{duration} seconds, indicating "
+                f"relatively strong customer engagement."
+            )
+
+        elif duration >= 100:
+
+            explanations.append(
+                f"The current contact duration is "
+                f"{duration} seconds, indicating "
+                f"moderate customer engagement."
+            )
+
+        else:
+
+            explanations.append(
+                f"The current contact duration is "
+                f"{duration} seconds, indicating "
+                f"relatively limited engagement."
+            )
+
+        # ----------------------------------------------------
+        # Age
+        # ----------------------------------------------------
+
+        age = customer_data.get(
+            "age",
+            None
+        )
+
+        age_group = customer_data.get(
+            "age_group",
+            None
+        )
+
+        if age is not None:
+
+            if age_group:
 
                 explanations.append(
-                    f"Customer has a positive "
-                    f"account balance of "
-                    f"{balance}."
-                )
-
-            elif balance < 0:
-
-                explanations.append(
-                    f"Customer has a negative "
-                    f"account balance of "
-                    f"{balance}."
+                    f"The customer is {age} years old "
+                    f"and belongs to the "
+                    f"{age_group} age group."
                 )
 
             else:
 
                 explanations.append(
-                    "Customer has a zero "
-                    "account balance."
+                    f"The customer is {age} years old."
                 )
 
-        if "campaign" in customer_data:
+        # ----------------------------------------------------
+        # Account balance
+        # ----------------------------------------------------
+
+        balance = customer_data.get(
+            "balance",
+            0
+        )
+
+        if balance > 0:
 
             explanations.append(
-                f"Current campaign contact "
-                f"count: "
-                f"{customer_data['campaign']}."
+                f"The customer has a positive "
+                f"account balance of {balance}."
             )
 
-        if "previous" in customer_data:
+        elif balance < 0:
 
             explanations.append(
-                f"Previous campaign contacts: "
-                f"{customer_data['previous']}."
+                f"The customer has a negative "
+                f"account balance of {balance}."
             )
 
-        if "poutcome" in customer_data:
+        else:
 
             explanations.append(
-                f"Previous campaign outcome: "
-                f"{customer_data['poutcome']}."
-            )
-
-        if "contact" in customer_data:
-
-            explanations.append(
-                f"Current contact channel: "
-                f"{customer_data['contact']}."
+                "The customer has a zero account balance."
             )
 
         # ====================================================
-        # DISPLAY
+        # GLOBAL MODEL FEATURE IMPORTANCE
+        # ====================================================
+
+        top_features = []
+
+        try:
+
+            preprocessor = (
+                model.named_steps[
+                    "preprocessor"
+                ]
+            )
+
+            classifier = (
+                model.named_steps[
+                    "classifier"
+                ]
+            )
+
+            feature_names = (
+                preprocessor
+                .get_feature_names_out()
+            )
+
+            importances = (
+                classifier.feature_importances_
+            )
+
+            feature_importance_pairs = sorted(
+                zip(
+                    feature_names,
+                    importances
+                ),
+                key=lambda item: item[1],
+                reverse=True
+            )
+
+            for feature, importance in (
+                feature_importance_pairs[:10]
+            ):
+
+                clean_feature = (
+                    feature
+                    .replace(
+                        "numeric__",
+                        ""
+                    )
+                    .replace(
+                        "categorical__",
+                        ""
+                    )
+                )
+
+                top_features.append(
+                    {
+                        "feature":
+                            clean_feature,
+
+                        "importance":
+                            float(importance)
+                    }
+                )
+
+        except Exception as error:
+
+            print(
+                f"Feature importance generation "
+                f"failed: {error}"
+            )
+
+        # ====================================================
+        # DISPLAY EXPLANATIONS
         # ====================================================
 
         print()
@@ -337,7 +413,7 @@ class ExplainabilityEngine:
         )
 
         print(
-            "                 MODEL EXPLANATION"
+            "              CUSTOMER-SPECIFIC EXPLANATION"
         )
 
         print(
@@ -358,21 +434,34 @@ class ExplainabilityEngine:
         print()
 
         print(
+            "Top Global Model Features:"
+        )
+
+        for number, item in enumerate(
+            top_features,
+            start=1
+        ):
+
+            print(
+                f"   {number}. "
+                f"{item['feature']} "
+                f"(importance: "
+                f"{item['importance']:.4f})"
+            )
+
+        print()
+
+        print(
             "=" * 70
         )
 
         return {
-            "explanations": explanations,
-            "top_features": [
-                {
-                    "feature": feature,
-                    "importance": float(
-                        importance
-                    )
-                }
-                for feature, importance
-                in top_features
-            ]
+
+            "explanations":
+                explanations,
+
+            "top_features":
+                top_features
         }
 
 
@@ -384,68 +473,24 @@ if __name__ == "__main__":
 
     engine = ExplainabilityEngine()
 
-    # --------------------------------------------------------
-    # Example customer
-    # --------------------------------------------------------
-
     customer = {
 
         "age": 35,
 
-        "job": "management",
-
-        "marital": "married",
-
-        "education": "tertiary",
-
-        "default": "no",
-
         "balance": 1500,
 
-        "housing": "yes",
-
-        "loan": "no",
-
-        "contact": "cellular",
-
-        "day": 15,
-
-        "month": "may",
-
-        "duration": 300,
-
         "campaign": 2,
-
-        "pdays": -1,
 
         "previous": 0,
 
         "poutcome": "unknown",
 
-        "age_group": "31-40",
+        "contact": "cellular",
 
-        "balance_log": 7.313,
+        "duration": 300,
 
-        "campaign_log": 1.099,
-
-        "previous_contact": 0,
-
-        "previously_contacted": 0,
-
-        "zero_balance": 0,
-
-        "loan_burden": 0,
-
-        "campaign_intensity": "low",
-
-        "contact_unknown": 0,
-
-        "previous_success": 0
+        "age_group": "31-40"
     }
-
-    # --------------------------------------------------------
-    # Example decision result
-    # --------------------------------------------------------
 
     decision_result = {
 
@@ -457,16 +502,12 @@ if __name__ == "__main__":
 
         "risk_category": "MEDIUM",
 
-        "priority": "LOW",
+        "priority": "MEDIUM",
 
         "recommended_action":
-            "Do not prioritize customer "
-            "for immediate campaign outreach."
+            "Include customer in standard "
+            "marketing follow-up."
     }
-
-    # --------------------------------------------------------
-    # Generate explanation
-    # --------------------------------------------------------
 
     result = (
         engine.generate_explanation(
