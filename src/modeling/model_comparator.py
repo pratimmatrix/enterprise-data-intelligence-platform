@@ -111,7 +111,8 @@ class ModelComparator:
 
         X = df.drop(
             columns=[
-                self.TARGET_COLUMN
+                self.TARGET_COLUMN,
+                "duration"
             ]
         ).copy()
 
