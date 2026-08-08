@@ -10,9 +10,18 @@ from src.profiling.profiler import DataProfiler
 from src.profiling.quality import DataQualityEngine
 from src.profiling.anomalies import AnomalyEngine
 
-from src.feature_engineering.feature_engineer import FeatureEngineeringEngine
-from src.feature_validation.feature_validator import FeatureValidator
+from src.feature_engineering.feature_engineer import (
+    FeatureEngineeringEngine
+)
 
+from src.feature_validation.feature_validator import (
+    FeatureValidator
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
 DATA_FILE = "data/raw/bank-full.csv"
 
@@ -34,7 +43,6 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def section(title):
-
     print()
     print("=" * 70)
     print(f"{title:^70}")
@@ -146,7 +154,10 @@ def quality_analysis(df):
     else:
 
         print("DataQualityEngine initialized.")
-        print("No compatible quality-analysis method found.")
+        print(
+            "No compatible quality-analysis "
+            "method found."
+        )
 
 
 # ============================================================
@@ -187,7 +198,8 @@ def statistical_intelligence(df):
         upper_bound = q3 + 1.5 * iqr
 
         outlier_count = (
-            (series < lower_bound) |
+            (series < lower_bound)
+            |
             (series > upper_bound)
         ).sum()
 
@@ -211,7 +223,9 @@ def statistical_intelligence(df):
 
         else:
 
-            distribution = "Approximately Symmetric"
+            distribution = (
+                "Approximately Symmetric"
+            )
 
         print()
         print(f"Column: {column}")
@@ -548,6 +562,7 @@ def feature_engineering_analysis(df):
         )
 
         print()
+
         print(
             f"Feature engineering error: "
             f"{error}"
@@ -570,7 +585,13 @@ def feature_validation(df):
 
     validator = FeatureValidator()
 
-    validator.validate(df)
+    validation_result = validator.validate(df)
+
+    if validation_result is False:
+
+        raise ValueError(
+            "Feature validation failed."
+        )
 
     print()
     print(
@@ -585,6 +606,7 @@ def feature_validation(df):
 def main():
 
     print()
+
     print("=" * 70)
 
     print(
@@ -595,55 +617,75 @@ def main():
 
     try:
 
-        # -------------------------------
-        # INGESTION
-        # -------------------------------
+        # ----------------------------------------------------
+        # 1. DATA INGESTION
+        # ----------------------------------------------------
 
         df = load_data()
 
-        # -------------------------------
-        # VALIDATION
-        # -------------------------------
+        # ----------------------------------------------------
+        # 2. DATA VALIDATION
+        # ----------------------------------------------------
 
         validate_data(df)
 
-        # -------------------------------
-        # PROFILING
-        # -------------------------------
+        # ----------------------------------------------------
+        # 3. DATASET METADATA
+        # ----------------------------------------------------
 
         metadata_analysis(df)
 
+        # ----------------------------------------------------
+        # 4. DATA PROFILING
+        # ----------------------------------------------------
+
         profiling_analysis(df)
+
+        # ----------------------------------------------------
+        # 5. DATA QUALITY
+        # ----------------------------------------------------
 
         quality_analysis(df)
 
-        # -------------------------------
-        # INTELLIGENCE
-        # -------------------------------
+        # ----------------------------------------------------
+        # 6. STATISTICAL INTELLIGENCE
+        # ----------------------------------------------------
 
         statistical_intelligence(df)
 
+        # ----------------------------------------------------
+        # 7. SEMANTIC INTELLIGENCE
+        # ----------------------------------------------------
+
         semantic_intelligence(df)
+
+        # ----------------------------------------------------
+        # 8. RELATIONSHIP INTELLIGENCE
+        # ----------------------------------------------------
 
         relationship_intelligence(df)
 
+        # ----------------------------------------------------
+        # 9. ANOMALY INTELLIGENCE
+        # ----------------------------------------------------
+
         anomaly_intelligence(df)
 
-        # -------------------------------
-        # FEATURE ENGINEERING
-        # -------------------------------
+        # ----------------------------------------------------
+        # 10. FEATURE ENGINEERING
+        # ----------------------------------------------------
 
         df = feature_engineering_analysis(df)
 
-        # -------------------------------
-        # FEATURE VALIDATION
-        # -------------------------------
+        # ----------------------------------------------------
+        # 11. FEATURE VALIDATION
+        # ----------------------------------------------------
 
         feature_validation(df)
 
-        # -------------------------------
-        # COMPLETE
-        # -------------------------------
+        # ----------------------------------------------------
+        # 12. PIPELINE COMPLETE
+        # ----------------------------------------------------
 
         section("PIPELINE COMPLETE")
 
@@ -678,9 +720,11 @@ def main():
         )
 
         print()
+
         print("=" * 70)
         print("PIPELINE FAILED")
         print("=" * 70)
+
         print()
 
         print(
@@ -697,9 +741,11 @@ def main():
         )
 
         print()
+
         print("=" * 70)
         print("PIPELINE FAILED")
         print("=" * 70)
+
         print()
 
         print(
