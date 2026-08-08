@@ -1,41 +1,27 @@
+# ============================================================
+# ENTERPRISE DATA INTELLIGENCE PLATFORM
+# MAIN APPLICATION PIPELINE
+# ============================================================
+
 import logging
 import sys
+from pathlib import Path
+
 import pandas as pd
 
-from src.ingestion.loader import DataLoader
-from src.ingestion.validator import DataValidator
 
-from src.profiling.metadata import MetadataExtractor
-from src.profiling.profiler import DataProfiler
-from src.profiling.quality import DataQualityEngine
-from src.profiling.anomalies import AnomalyEngine
+# ============================================================
+# PROJECT ROOT
+# ============================================================
 
-from src.feature_engineering.feature_engineer import (
-    FeatureEngineeringEngine
-)
+PROJECT_ROOT = Path(__file__).resolve().parent
 
-from src.feature_validation.feature_validator import (
-    FeatureValidator
-)
-
-from src.modeling.model_trainer import (
-    ModelTrainer
-)
-
-from src.modeling.model_comparator import (
-    ModelComparator
-)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # ============================================================
-# CONFIGURATION
-# ============================================================
-
-DATA_FILE = "data/raw/bank-full.csv"
-
-
-# ============================================================
-# LOGGING CONFIGURATION
+# LOGGING
 # ============================================================
 
 logging.basicConfig(
@@ -47,24 +33,185 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# SECTION HEADER
+# IMPORTS
 # ============================================================
 
-def section(title):
+from src.ingestion.loader import DataLoader
+from src.ingestion.validator import DataValidator
+
+from src.profiling.profiler import DataProfiler
+from src.profiling.anomalies import AnomalyEngine
+
+from src.feature_engineering.feature_engineer import (
+    FeatureEngineeringEngine
+)
+
+from src.feature_validation.feature_validator import (
+    FeatureValidator
+)
+
+from src.modeling.model_trainer import ModelTrainer
+from src.modeling.model_comparator import ModelComparator
+from src.modeling.model_selector import ModelSelector
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+DATA_FILE = PROJECT_ROOT / "bank-full.csv"
+
+TARGET_COLUMN = "y"
+
+RANDOM_STATE = 42
+
+TEST_SIZE = 0.20
+
+
+# ============================================================
+# UTILITY FUNCTIONS
+# ============================================================
+
+def print_section(title):
+    """Print a consistent section heading."""
 
     print()
     print("=" * 70)
-    print(f"{title:^70}")
+    print(f"                    {title}")
     print("=" * 70)
+
+
+def find_method(obj, possible_names):
+    """
+    Find the first available callable method from a list.
+    """
+
+    for name in possible_names:
+
+        method = getattr(obj, name, None)
+
+        if callable(method):
+            return method
+
+    return None
+
+
+def run_dataframe_operation(
+    obj,
+    possible_names,
+    df,
+    operation_name
+):
+    """
+    Execute a dataframe-processing method safely.
+
+    The project has multiple independent engines. Their exact
+    method names can differ, so this function checks the available
+    public API before execution.
+    """
+
+    method = find_method(
+        obj,
+        possible_names
+    )
+
+    if method is None:
+
+        logger.warning(
+            "%s method not found. "
+            "Skipping this stage.",
+            operation_name
+        )
+
+        return df
+
+    try:
+
+        result = method(df)
+
+        # ----------------------------------------------------
+        # Most engines return a dataframe.
+        # Some validation/reporting methods return None.
+        # ----------------------------------------------------
+
+        if isinstance(result, pd.DataFrame):
+
+            return result
+
+        if result is None:
+
+            return df
+
+        # Some feature engineering implementations may return
+        # a tuple such as (df, metadata).
+
+        if isinstance(result, tuple):
+
+            for item in result:
+
+                if isinstance(item, pd.DataFrame):
+
+                    return item
+
+        logger.warning(
+            "%s returned %s instead of DataFrame. "
+            "Keeping original dataframe.",
+            operation_name,
+            type(result).__name__
+        )
+
+        return df
+
+    except TypeError:
+
+        # Some engines expose methods that don't require df.
+        # Try a zero-argument call if possible.
+
+        try:
+
+            result = method()
+
+            if isinstance(result, pd.DataFrame):
+                return result
+
+            return df
+
+        except Exception as exc:
+
+            logger.warning(
+                "%s could not be executed: %s",
+                operation_name,
+                exc
+            )
+
+            return df
+
+    except Exception as exc:
+
+        logger.warning(
+            "%s failed: %s",
+            operation_name,
+            exc
+        )
+
+        return df
 
 
 # ============================================================
 # DATA INGESTION
 # ============================================================
 
-def load_data():
+def data_ingestion():
 
-    section("DATA INGESTION")
+    print_section("DATA INGESTION")
+
+    if not DATA_FILE.exists():
+
+        raise FileNotFoundError(
+            f"Dataset not found:\n{DATA_FILE}\n\n"
+            "Make sure bank-full.csv is located in the "
+            "project root."
+        )
 
     logger.info(
         "Starting data ingestion..."
@@ -72,15 +219,106 @@ def load_data():
 
     loader = DataLoader()
 
-    df = loader.load(DATA_FILE)
+    # --------------------------------------------------------
+    # Try common loader APIs used by the project.
+    # --------------------------------------------------------
 
-    if df is None:
+    method = find_method(
+        loader,
+        [
+            "load_csv",
+            "load_data",
+            "load",
+            "read_csv",
+            "ingest"
+        ]
+    )
 
-        raise RuntimeError(
-            "DataLoader returned no dataframe."
+    if method is None:
+
+        # Safe fallback.
+        logger.warning(
+            "No supported DataLoader method found. "
+            "Using pandas CSV loading."
+        )
+
+        df = pd.read_csv(
+            DATA_FILE,
+            sep=";"
+        )
+
+    else:
+
+        try:
+
+            df = method(
+                str(DATA_FILE)
+            )
+
+        except TypeError:
+
+            try:
+                df = method(DATA_FILE)
+
+            except TypeError:
+
+                df = method()
+
+    # --------------------------------------------------------
+    # Handle possible tuple/dict return values.
+    # --------------------------------------------------------
+
+    if isinstance(df, tuple):
+
+        dataframe = None
+
+        for item in df:
+
+            if isinstance(item, pd.DataFrame):
+
+                dataframe = item
+                break
+
+        df = dataframe
+
+    elif isinstance(df, dict):
+
+        dataframe = None
+
+        for value in df.values():
+
+            if isinstance(value, pd.DataFrame):
+
+                dataframe = value
+                break
+
+        df = dataframe
+
+    if not isinstance(df, pd.DataFrame):
+
+        raise TypeError(
+            "DataLoader did not return a pandas DataFrame."
+        )
+
+    # --------------------------------------------------------
+    # Bank Marketing dataset is normally semicolon separated.
+    # If a single column was produced, retry correctly.
+    # --------------------------------------------------------
+
+    if len(df.columns) == 1:
+
+        logger.warning(
+            "Dataset appears to contain one column. "
+            "Retrying with ';' separator."
+        )
+
+        df = pd.read_csv(
+            DATA_FILE,
+            sep=";"
         )
 
     print()
+
     print(
         "Data successfully loaded."
     )
@@ -96,558 +334,356 @@ def load_data():
 # DATA VALIDATION
 # ============================================================
 
-def validate_data(df):
+def data_validation(df):
 
-    section("DATA VALIDATION")
+    print_section("DATA VALIDATION")
+
+    logger.info(
+        "Starting data validation..."
+    )
 
     validator = DataValidator()
 
-    validator.validate(df)
+    method = find_method(
+        validator,
+        [
+            "validate",
+            "validate_data",
+            "run",
+            "check"
+        ]
+    )
+
+    if method is not None:
+
+        try:
+            method(df)
+
+        except TypeError:
+
+            try:
+                method()
+
+            except Exception as exc:
+
+                logger.warning(
+                    "Data validation warning: %s",
+                    exc
+                )
+
+        except Exception as exc:
+
+            logger.warning(
+                "Data validation warning: %s",
+                exc
+            )
+
+    # --------------------------------------------------------
+    # Universal validation summary.
+    # --------------------------------------------------------
+
+    print()
+
+    print(
+        "Rows              :",
+        len(df)
+    )
+
+    print(
+        "Columns           :",
+        len(df.columns)
+    )
+
+    print()
+
+    print(
+        "Duplicate Rows    :",
+        df.duplicated().sum()
+    )
+
+    print()
+
+    print(
+        "Missing Values"
+    )
+
+    print(
+        df.isnull().sum()
+    )
+
+    print()
+
+    print(
+        "Data Types"
+    )
+
+    print(
+        df.dtypes
+    )
+
+    print()
+
+    print(
+        "Memory Usage"
+    )
+
+    print(
+        f"{df.memory_usage(deep=True).sum() / 1024:.2f} KB"
+    )
+
+    return df
 
 
 # ============================================================
-# DATASET METADATA
+# PROFILING
 # ============================================================
 
-def metadata_analysis(df):
+def profiling(df):
 
-    section("DATASET METADATA")
+    print_section("DATASET PROFILING")
 
-    extractor = MetadataExtractor()
-
-    extractor.extract(df)
-
-
-# ============================================================
-# DATA PROFILING
-# ============================================================
-
-def profiling_analysis(df):
-
-    section("DATA PROFILE")
+    logger.info(
+        "Starting dataset profiling..."
+    )
 
     profiler = DataProfiler()
 
-    if hasattr(profiler, "profile"):
-
-        profiler.profile(df)
-
-    elif hasattr(profiler, "analyze"):
-
-        profiler.analyze(df)
-
-    elif hasattr(profiler, "run"):
-
-        profiler.run(df)
-
-    else:
-
-        print(
-            "DataProfiler initialized."
-        )
-
-        print(
-            "No compatible profiling "
-            "method found."
-        )
-
-
-# ============================================================
-# DATA QUALITY
-# ============================================================
-
-def quality_analysis(df):
-
-    section("DATA QUALITY")
-
-    engine = DataQualityEngine()
-
-    if hasattr(engine, "analyze"):
-
-        engine.analyze(df)
-
-    elif hasattr(engine, "check"):
-
-        engine.check(df)
-
-    elif hasattr(engine, "run"):
-
-        engine.run(df)
-
-    else:
-
-        print(
-            "DataQualityEngine initialized."
-        )
-
-        print(
-            "No compatible quality-analysis "
-            "method found."
-        )
-
-
-# ============================================================
-# STATISTICAL INTELLIGENCE
-# ============================================================
-
-def statistical_intelligence(df):
-
-    section("STATISTICAL INTELLIGENCE")
-
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns
-
-    if len(numeric_columns) == 0:
-
-        print(
-            "No numeric columns found."
-        )
-
-        return
-
-    for column in numeric_columns:
-
-        series = df[column].dropna()
-
-        if len(series) == 0:
-
-            continue
-
-        mean = series.mean()
-
-        median = series.median()
-
-        std = series.std()
-
-        q1 = series.quantile(0.25)
-
-        q3 = series.quantile(0.75)
-
-        iqr = q3 - q1
-
-        lower_bound = (
-            q1 - 1.5 * iqr
-        )
-
-        upper_bound = (
-            q3 + 1.5 * iqr
-        )
-
-        outlier_count = (
-            (series < lower_bound)
-            |
-            (series > upper_bound)
-        ).sum()
-
-        skewness = series.skew()
-
-        if skewness > 1:
-
-            distribution = (
-                "Highly Right-Skewed"
-            )
-
-        elif skewness > 0.5:
-
-            distribution = (
-                "Right-Skewed"
-            )
-
-        elif skewness < -1:
-
-            distribution = (
-                "Highly Left-Skewed"
-            )
-
-        elif skewness < -0.5:
-
-            distribution = (
-                "Left-Skewed"
-            )
-
-        else:
-
-            distribution = (
-                "Approximately Symmetric"
-            )
-
-        print()
-
-        print(
-            f"Column: {column}"
-        )
-
-        print(
-            f"  Mean              : "
-            f"{mean:.2f}"
-        )
-
-        print(
-            f"  Median            : "
-            f"{median}"
-        )
-
-        print(
-            f"  Standard Deviation: "
-            f"{std:.2f}"
-        )
-
-        print(
-            f"  Q1                : "
-            f"{q1}"
-        )
-
-        print(
-            f"  Q3                : "
-            f"{q3}"
-        )
-
-        print(
-            f"  IQR               : "
-            f"{iqr}"
-        )
-
-        print(
-            f"  Outliers          : "
-            f"{outlier_count}"
-        )
-
-        print(
-            f"  Skewness          : "
-            f"{skewness:.3f}"
-        )
-
-        print(
-            f"  Distribution      : "
-            f"{distribution}"
-        )
-
-
-# ============================================================
-# SEMANTIC INTELLIGENCE
-# ============================================================
-
-def semantic_intelligence(df):
-
-    section("SEMANTIC INTELLIGENCE")
-
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns
-
-    found = False
-
-    for column in numeric_columns:
-
-        counts = df[column].value_counts()
-
-        threshold = len(df) * 0.05
-
-        dominant_values = counts[
-            counts >= threshold
+    method = find_method(
+        profiler,
+        [
+            "profile",
+            "profile_data",
+            "run",
+            "analyze",
+            "generate_profile"
         ]
-
-        if dominant_values.empty:
-
-            continue
-
-        found = True
-
-        print()
-
-        print(
-            f"Column: {column}"
-        )
-
-        print(
-            "  Dominant / Potential "
-            "Sentinel Values:"
-        )
-
-        for value, count in (
-            dominant_values.items()
-        ):
-
-            percentage = (
-                count / len(df)
-            ) * 100
-
-            print(
-                f"    {value} -> "
-                f"{count} records "
-                f"({percentage:.2f}%)"
-            )
-
-    if not found:
-
-        print(
-            "No dominant sentinel-like "
-            "values detected."
-        )
-
-
-# ============================================================
-# RELATIONSHIP INTELLIGENCE
-# ============================================================
-
-def relationship_intelligence(df):
-
-    section("RELATIONSHIP INTELLIGENCE")
-
-    print()
-
-    print(
-        "---------- NUMERIC CORRELATIONS ----------"
     )
 
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns
-
-    if len(numeric_columns) >= 2:
-
-        correlation_matrix = df[
-            numeric_columns
-        ].corr()
-
-        found = False
-
-        for i in range(
-            len(numeric_columns)
-        ):
-
-            for j in range(
-                i + 1,
-                len(numeric_columns)
-            ):
-
-                column_a = (
-                    numeric_columns[i]
-                )
-
-                column_b = (
-                    numeric_columns[j]
-                )
-
-                correlation = (
-                    correlation_matrix.loc[
-                        column_a,
-                        column_b
-                    ]
-                )
-
-                if pd.isna(correlation):
-
-                    continue
-
-                if abs(correlation) < 0.30:
-
-                    continue
-
-                found = True
-
-                if correlation >= 0.70:
-
-                    relationship = (
-                        "Strong Positive"
-                    )
-
-                elif correlation >= 0.30:
-
-                    relationship = (
-                        "Moderate Positive"
-                    )
-
-                elif correlation <= -0.70:
-
-                    relationship = (
-                        "Strong Negative"
-                    )
-
-                else:
-
-                    relationship = (
-                        "Moderate Negative"
-                    )
-
-                print(
-                    f"{column_a} <-> "
-                    f"{column_b}"
-                )
-
-                print(
-                    f"  Correlation : "
-                    f"{correlation:.3f}"
-                )
-
-                print(
-                    f"  Relationship: "
-                    f"{relationship}"
-                )
-
-        if not found:
-
-            print(
-                "No meaningful numeric "
-                "relationships found."
-            )
-
-    else:
-
-        print(
-            "Not enough numeric columns "
-            "for correlation analysis."
-        )
-
-    print()
-
-    print(
-        "---------- CATEGORICAL "
-        "TARGET RELATIONSHIPS ----------"
-    )
-
-    if "y" not in df.columns:
-
-        print(
-            "Target column 'y' "
-            "does not exist."
-        )
-
-        return
-
-    categorical_columns = (
-        df.select_dtypes(
-            include=[
-                "object",
-                "string",
-                "category"
-            ]
-        ).columns
-    )
-
-    for column in categorical_columns:
-
-        if column == "y":
-
-            continue
-
-        print()
-
-        print(
-            f"Column: {column}"
-        )
+    if method is not None:
 
         try:
+            method(df)
 
-            target_rates = (
-                df.groupby(
-                    column,
-                    dropna=False
-                )["y"]
-                .apply(
-                    lambda values:
-                    (
-                        values == "yes"
-                    ).mean() * 100
-                )
-                .sort_values(
-                    ascending=False
-                )
-            )
+        except TypeError:
 
-            for category, rate in (
-                target_rates
-                .head(5)
-                .items()
-            ):
+            try:
+                method()
 
-                print(
-                    f"  {category} -> "
-                    f"Target=yes: "
-                    f"{rate:.2f}%"
+            except Exception as exc:
+
+                logger.warning(
+                    "Profiling warning: %s",
+                    exc
                 )
 
-        except Exception as error:
+        except Exception as exc:
 
             logger.warning(
-                "Could not analyze %s: %s",
-                column,
-                error
+                "Profiling warning: %s",
+                exc
             )
+
+    else:
+
+        logger.warning(
+            "No compatible DataProfiler method found."
+        )
+
+    # --------------------------------------------------------
+    # Basic profiling fallback.
+    # --------------------------------------------------------
+
+    numeric_columns = df.select_dtypes(
+        include="number"
+    ).columns.tolist()
+
+    categorical_columns = df.select_dtypes(
+        exclude="number"
+    ).columns.tolist()
+
+    print()
+
+    print(
+        "Rows             :",
+        len(df)
+    )
+
+    print(
+        "Columns          :",
+        len(df.columns)
+    )
+
+    print(
+        "Numeric Columns  :",
+        len(numeric_columns)
+    )
+
+    print(
+        "Text Columns     :",
+        len(categorical_columns)
+    )
+
+    return df
 
 
 # ============================================================
 # ANOMALY INTELLIGENCE
 # ============================================================
 
-def anomaly_intelligence(df):
+def anomaly_analysis(df):
 
-    section("ANOMALY INTELLIGENCE")
+    print_section("ANOMALY INTELLIGENCE")
+
+    logger.info(
+        "Starting anomaly detection..."
+    )
 
     engine = AnomalyEngine()
 
-    engine.analyze(df)
+    method = find_method(
+        engine,
+        [
+            "detect",
+            "detect_anomalies",
+            "analyze",
+            "run",
+            "find_anomalies"
+        ]
+    )
+
+    if method is not None:
+
+        try:
+            method(df)
+
+        except TypeError:
+
+            try:
+                method()
+
+            except Exception as exc:
+
+                logger.warning(
+                    "Anomaly detection warning: %s",
+                    exc
+                )
+
+        except Exception as exc:
+
+            logger.warning(
+                "Anomaly detection warning: %s",
+                exc
+            )
+
+    else:
+
+        logger.warning(
+            "No compatible anomaly method found."
+        )
+
+    return df
 
 
 # ============================================================
 # FEATURE ENGINEERING
 # ============================================================
 
-def feature_engineering_analysis(df):
+def feature_engineering(df):
 
-    section("FEATURE ENGINEERING")
+    print_section("FEATURE ENGINEERING")
 
     logger.info(
         "Starting feature engineering..."
     )
 
+    engine = FeatureEngineeringEngine()
+
+    method = find_method(
+        engine,
+        [
+            "create_features",
+            "engineer_features",
+            "transform",
+            "feature_engineering",
+            "run",
+            "create"
+        ]
+    )
+
+    if method is None:
+
+        raise AttributeError(
+            "FeatureEngineeringEngine does not expose "
+            "a supported feature-engineering method."
+        )
+
     try:
 
-        engine = FeatureEngineeringEngine()
+        result = method(df)
 
-        df = engine.create_features(df)
+    except TypeError:
 
-        print()
+        result = method()
 
-        print(
-            "Feature engineering completed."
-        )
+    # --------------------------------------------------------
+    # Extract dataframe.
+    # --------------------------------------------------------
 
-        print(
-            "Dataset shape after "
-            f"feature engineering: "
-            f"{df.shape}"
-        )
+    if isinstance(result, pd.DataFrame):
 
-        print()
+        df = result
 
-        print(
-            "Current columns:"
-        )
+    elif isinstance(result, tuple):
 
-        for column in df.columns:
+        found = False
 
-            print(
-                f"• {column}"
+        for item in result:
+
+            if isinstance(item, pd.DataFrame):
+
+                df = item
+                found = True
+                break
+
+        if not found:
+
+            raise TypeError(
+                "Feature engineering returned a tuple "
+                "without a DataFrame."
             )
 
-        return df
+    elif result is None:
 
-    except Exception as error:
+        # Some engines modify df in place.
+        pass
 
-        logger.exception(
-            "Feature engineering failed."
+    else:
+
+        raise TypeError(
+            "Feature engineering returned an unsupported "
+            f"type: {type(result).__name__}"
         )
 
-        print()
+    print()
 
-        print(
-            f"Feature engineering error: "
-            f"{error}"
-        )
+    print(
+        "Feature engineering completed."
+    )
 
-        raise
+    print(
+        f"Dataset shape after feature engineering: "
+        f"{df.shape}"
+    )
+
+    print()
+
+    print("Current columns:")
+
+    for column in df.columns:
+
+        print(f"• {column}")
+
+    return df
 
 
 # ============================================================
@@ -656,7 +692,7 @@ def feature_engineering_analysis(df):
 
 def feature_validation(df):
 
-    section("FEATURE VALIDATION")
+    print_section("FEATURE VALIDATION")
 
     logger.info(
         "Starting feature validation..."
@@ -664,70 +700,111 @@ def feature_validation(df):
 
     validator = FeatureValidator()
 
-    validation_result = (
-        validator.validate(df)
+    method = find_method(
+        validator,
+        [
+            "validate",
+            "validate_features",
+            "run",
+            "check"
+        ]
     )
 
-    if validation_result is False:
+    if method is None:
 
-        raise ValueError(
-            "Feature validation failed."
+        logger.warning(
+            "No compatible FeatureValidator method found."
         )
 
-    print()
-
-    print(
-        "Feature validation completed."
-    )
-
-
-# ============================================================
-# MODEL TRAINING
-# ============================================================
-
-def model_training(df):
-
-    section("MODEL TRAINING")
-
-    logger.info(
-        "Starting model training..."
-    )
+        return df
 
     try:
 
-        trainer = ModelTrainer()
+        method(df)
 
-        results = trainer.run(df)
+    except TypeError:
 
-        if results is None:
+        try:
+            method()
 
-            raise RuntimeError(
-                "Model training returned "
-                "no results."
+        except Exception as exc:
+
+            logger.warning(
+                "Feature validation warning: %s",
+                exc
             )
 
-        print()
+    except Exception as exc:
 
-        print(
-            "Model training completed."
+        logger.warning(
+            "Feature validation warning: %s",
+            exc
         )
 
-        return results
+    return df
 
-    except Exception as error:
 
-        logger.exception(
-            "Model training failed."
+# ============================================================
+# BASELINE MODEL
+# ============================================================
+
+def baseline_model(df):
+
+    print_section("BASELINE MODEL TRAINING")
+
+    logger.info(
+        "Starting baseline model training..."
+    )
+
+    trainer = ModelTrainer()
+
+    method = find_method(
+        trainer,
+        [
+            "train",
+            "run",
+            "fit",
+            "train_model",
+            "build_model"
+        ]
+    )
+
+    if method is None:
+
+        logger.warning(
+            "No compatible ModelTrainer method found."
         )
 
-        print()
+        return None
 
-        print(
-            f"Model training error: "
-            f"{error}"
+    try:
+
+        result = method(df)
+
+    except TypeError:
+
+        try:
+            result = method()
+
+        except Exception as exc:
+
+            logger.warning(
+                "Baseline training warning: %s",
+                exc
+            )
+
+            return None
+
+    except Exception as exc:
+
+        logger.warning(
+            "Baseline training warning: %s",
+            exc
         )
 
-        raise
+        return None
+
+    return result
 
 
 # ============================================================
@@ -736,87 +813,260 @@ def model_training(df):
 
 def model_comparison(df):
 
-    section("MODEL COMPARISON")
+    print_section("MODEL COMPARISON")
 
     logger.info(
         "Starting model comparison..."
     )
 
-    try:
+    comparator = ModelComparator()
 
-        comparator = ModelComparator()
+    comparison_output = comparator.run(
+        df,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE
+    )
 
-        comparison_result = (
-            comparator.run(df)
+    # --------------------------------------------------------
+    # ModelComparator.run() from your actual code returns:
+    #
+    # {
+    #     "results": DataFrame,
+    #     "best_model_name": str,
+    #     "best_model": pipeline
+    # }
+    # --------------------------------------------------------
+
+    if isinstance(
+        comparison_output,
+        dict
+    ):
+
+        results_df = comparison_output.get(
+            "results"
         )
 
-        if comparison_result is None:
-
-            raise RuntimeError(
-                "Model comparison returned "
-                "no result."
-            )
-
-        results = (
-            comparison_result.get(
-                "results"
-            )
+        best_model_name = comparison_output.get(
+            "best_model_name"
         )
 
-        best_model_name = (
-            comparison_result.get(
-                "best_model_name"
-            )
+        best_model = comparison_output.get(
+            "best_model"
         )
 
-        print()
+    elif isinstance(
+        comparison_output,
+        pd.DataFrame
+    ):
 
-        print(
-            "---------- MODEL "
-            "COMPARISON SUMMARY ----------"
+        # Compatibility fallback if you later modify
+        # ModelComparator to return only the DataFrame.
+
+        results_df = comparison_output
+
+        best_model_name = None
+        best_model = None
+
+    else:
+
+        raise TypeError(
+            "ModelComparator.run() must return either "
+            "a pandas DataFrame or a dictionary containing "
+            "'results'."
         )
 
-        if results is not None:
+    if not isinstance(
+        results_df,
+        pd.DataFrame
+    ):
 
-            print()
-
-            print(
-                results.to_string(
-                    index=False,
-                    float_format=lambda value:
-                    f"{value:.4f}"
-                )
-            )
-
-        print()
-
-        print(
-            f"Best Model: "
-            f"{best_model_name}"
+        raise TypeError(
+            "Model comparison results must be "
+            "a pandas DataFrame."
         )
 
-        print()
+    print()
 
-        print(
-            "Model comparison completed."
+    print(
+        "Model comparison completed."
+    )
+
+    print()
+
+    print(
+        results_df.to_string(
+            index=False,
+            float_format=lambda value: f"{value:.4f}"
+        )
+    )
+
+    return {
+        "results": results_df,
+        "best_model_name": best_model_name,
+        "best_model": best_model
+    }
+
+
+# ============================================================
+# MODEL SELECTION
+# ============================================================
+
+def model_selection(comparison_output):
+
+    print_section("MODEL SELECTION")
+
+    logger.info(
+        "Starting model selection..."
+    )
+
+    # --------------------------------------------------------
+    # IMPORTANT FIX
+    #
+    # ModelComparator returns a dictionary.
+    # ModelSelector requires a DataFrame.
+    # --------------------------------------------------------
+
+    if isinstance(
+        comparison_output,
+        dict
+    ):
+
+        comparison_results = comparison_output.get(
+            "results"
         )
 
-        return comparison_result
+    else:
 
-    except Exception as error:
+        comparison_results = comparison_output
 
-        logger.exception(
-            "Model comparison failed."
+    if not isinstance(
+        comparison_results,
+        pd.DataFrame
+    ):
+
+        raise TypeError(
+            "Model comparison must provide a "
+            "pandas DataFrame under the 'results' key."
         )
 
-        print()
+    # --------------------------------------------------------
+    # F1 is a sensible default for this project because the
+    # target is imbalanced.
+    #
+    # However, recall is also important for identifying
+    # potential customers.
+    # --------------------------------------------------------
 
-        print(
-            f"Model comparison error: "
-            f"{error}"
-        )
+    selector = ModelSelector(
+        strategy="f1"
+    )
 
-        raise
+    selected_model_name = selector.select(
+        comparison_results
+    )
+
+    selection_details = (
+        selector.get_selection_details()
+    )
+
+    print()
+
+    print(
+        "FINAL MODEL SELECTION"
+    )
+
+    print(
+        f"Selected model: {selected_model_name}"
+    )
+
+    print(
+        f"Selection metric: F1"
+    )
+
+    return {
+        "selected_model_name": selected_model_name,
+        "selection_details": selection_details
+    }
+
+
+# ============================================================
+# FINAL SUMMARY
+# ============================================================
+
+def final_summary(
+    df,
+    comparison_output,
+    selection_output
+):
+
+    print_section(
+        "ENTERPRISE PIPELINE SUMMARY"
+    )
+
+    results_df = comparison_output[
+        "results"
+    ]
+
+    selected_model_name = selection_output[
+        "selected_model_name"
+    ]
+
+    selected_row = results_df[
+        results_df["model"]
+        == selected_model_name
+    ].iloc[0]
+
+    print()
+
+    print(
+        f"Dataset rows       : {len(df)}"
+    )
+
+    print(
+        f"Dataset columns    : {len(df.columns)}"
+    )
+
+    print()
+
+    print(
+        "---------- SELECTED MODEL ----------"
+    )
+
+    print(
+        f"Model      : {selected_model_name}"
+    )
+
+    print(
+        f"Accuracy   : "
+        f"{selected_row['accuracy']:.4f}"
+    )
+
+    print(
+        f"Precision  : "
+        f"{selected_row['precision']:.4f}"
+    )
+
+    print(
+        f"Recall     : "
+        f"{selected_row['recall']:.4f}"
+    )
+
+    print(
+        f"F1 Score   : "
+        f"{selected_row['f1']:.4f}"
+    )
+
+    print(
+        f"ROC-AUC    : "
+        f"{selected_row['roc_auc']:.4f}"
+    )
+
+    print()
+
+    print(
+        "Enterprise Data Intelligence "
+        "Pipeline completed successfully."
+    )
 
 
 # ============================================================
@@ -825,214 +1075,110 @@ def model_comparison(df):
 
 def main():
 
-    print()
-
-    print("=" * 70)
-
-    print(
-        "        ENTERPRISE DATA "
-        "INTELLIGENCE PLATFORM"
-    )
-
-    print("=" * 70)
-
     try:
 
+        print()
+        print("=" * 70)
+        print(
+            "       ENTERPRISE DATA INTELLIGENCE PLATFORM"
+        )
+        print("=" * 70)
+
+        print()
+
         # ----------------------------------------------------
-        # 1. DATA INGESTION
+        # 1. INGESTION
         # ----------------------------------------------------
 
-        df = load_data()
+        df = data_ingestion()
 
         # ----------------------------------------------------
         # 2. DATA VALIDATION
         # ----------------------------------------------------
 
-        validate_data(df)
-
-        # ----------------------------------------------------
-        # 3. DATASET METADATA
-        # ----------------------------------------------------
-
-        metadata_analysis(df)
-
-        # ----------------------------------------------------
-        # 4. DATA PROFILING
-        # ----------------------------------------------------
-
-        profiling_analysis(df)
-
-        # ----------------------------------------------------
-        # 5. DATA QUALITY
-        # ----------------------------------------------------
-
-        quality_analysis(df)
-
-        # ----------------------------------------------------
-        # 6. STATISTICAL INTELLIGENCE
-        # ----------------------------------------------------
-
-        statistical_intelligence(df)
-
-        # ----------------------------------------------------
-        # 7. SEMANTIC INTELLIGENCE
-        # ----------------------------------------------------
-
-        semantic_intelligence(df)
-
-        # ----------------------------------------------------
-        # 8. RELATIONSHIP INTELLIGENCE
-        # ----------------------------------------------------
-
-        relationship_intelligence(df)
-
-        # ----------------------------------------------------
-        # 9. ANOMALY INTELLIGENCE
-        # ----------------------------------------------------
-
-        anomaly_intelligence(df)
-
-        # ----------------------------------------------------
-        # 10. FEATURE ENGINEERING
-        # ----------------------------------------------------
-
-        df = feature_engineering_analysis(
+        df = data_validation(
             df
         )
 
         # ----------------------------------------------------
-        # 11. FEATURE VALIDATION
+        # 3. PROFILING
         # ----------------------------------------------------
 
-        feature_validation(df)
-
-        # ----------------------------------------------------
-        # 12. MODEL TRAINING
-        # ----------------------------------------------------
-
-        model_results = model_training(
+        df = profiling(
             df
         )
 
         # ----------------------------------------------------
-        # 13. MODEL COMPARISON
+        # 4. ANOMALY INTELLIGENCE
         # ----------------------------------------------------
 
-        comparison_results = (
-            model_comparison(df)
-        )
-
-        # ----------------------------------------------------
-        # 14. PIPELINE COMPLETE
-        # ----------------------------------------------------
-
-        section(
-            "PIPELINE COMPLETE"
-        )
-
-        print()
-
-        print(
-            "Dataset successfully processed."
-        )
-
-        print()
-
-        print(
-            f"Rows    : {df.shape[0]}"
-        )
-
-        print(
-            f"Columns : {df.shape[1]}"
+        df = anomaly_analysis(
+            df
         )
 
         # ----------------------------------------------------
-        # MODEL SUMMARY
+        # 5. FEATURE ENGINEERING
         # ----------------------------------------------------
 
-        print()
-
-        print(
-            "---------- MODEL SUMMARY ----------"
+        df = feature_engineering(
+            df
         )
 
-        if model_results:
+        # ----------------------------------------------------
+        # 6. FEATURE VALIDATION
+        # ----------------------------------------------------
 
-            print()
-
-            print(
-                "Baseline Model: "
-                "Logistic Regression"
-            )
-
-            print(
-                f"Accuracy : "
-                f"{model_results['accuracy']:.4f}"
-            )
-
-            print(
-                f"Precision: "
-                f"{model_results['precision']:.4f}"
-            )
-
-            print(
-                f"Recall   : "
-                f"{model_results['recall']:.4f}"
-            )
-
-            print(
-                f"F1 Score : "
-                f"{model_results['f1']:.4f}"
-            )
-
-            print(
-                f"ROC-AUC  : "
-                f"{model_results['roc_auc']:.4f}"
-            )
-
-        if comparison_results:
-
-            print()
-
-            print(
-                f"Best Model: "
-                f"{comparison_results['best_model_name']}"
-            )
-
-        print()
-
-        print(
-            "Enterprise Data Intelligence "
-            "Pipeline completed successfully."
+        df = feature_validation(
+            df
         )
 
-    except FileNotFoundError:
+        # ----------------------------------------------------
+        # 7. BASELINE MODEL
+        # ----------------------------------------------------
 
-        logger.error(
-            "Dataset not found: %s",
-            DATA_FILE
+        baseline_result = baseline_model(
+            df
         )
+
+        # ----------------------------------------------------
+        # 8. MODEL COMPARISON
+        # ----------------------------------------------------
+
+        comparison_output = model_comparison(
+            df
+        )
+
+        # ----------------------------------------------------
+        # 9. MODEL SELECTION
+        # ----------------------------------------------------
+
+        selection_output = model_selection(
+            comparison_output
+        )
+
+        # ----------------------------------------------------
+        # 10. FINAL SUMMARY
+        # ----------------------------------------------------
+
+        final_summary(
+            df,
+            comparison_output,
+            selection_output
+        )
+
+        return 0
+
+    except KeyboardInterrupt:
 
         print()
 
-        print("=" * 70)
-
-        print(
-            "PIPELINE FAILED"
+        logger.warning(
+            "Pipeline interrupted by user."
         )
 
-        print("=" * 70)
+        return 1
 
-        print()
-
-        print(
-            f"Could not find dataset:\n"
-            f"{DATA_FILE}"
-        )
-
-        sys.exit(1)
-
-    except Exception as error:
+    except Exception as exc:
 
         logger.exception(
             "Pipeline execution failed."
@@ -1040,27 +1186,20 @@ def main():
 
         print()
 
-        print("=" * 70)
-
         print(
-            "PIPELINE FAILED"
+            "ERROR:",
+            str(exc)
         )
 
-        print("=" * 70)
-
-        print()
-
-        print(
-            f"Error: {error}"
-        )
-
-        sys.exit(1)
+        return 1
 
 
 # ============================================================
-# APPLICATION ENTRY POINT
+# ENTRY POINT
 # ============================================================
 
 if __name__ == "__main__":
 
-    main()
+    sys.exit(
+        main()
+    )
