@@ -22,6 +22,10 @@ from src.modeling.model_trainer import (
     ModelTrainer
 )
 
+from src.modeling.model_comparator import (
+    ModelComparator
+)
+
 
 # ============================================================
 # CONFIGURATION
@@ -55,33 +59,41 @@ def section(title):
 
 
 # ============================================================
-# 1. DATA INGESTION
+# DATA INGESTION
 # ============================================================
 
 def load_data():
 
     section("DATA INGESTION")
 
-    logger.info("Starting data ingestion...")
+    logger.info(
+        "Starting data ingestion..."
+    )
 
     loader = DataLoader()
 
     df = loader.load(DATA_FILE)
 
     if df is None:
+
         raise RuntimeError(
             "DataLoader returned no dataframe."
         )
 
     print()
-    print("Data successfully loaded.")
-    print(f"Dataset shape: {df.shape}")
+    print(
+        "Data successfully loaded."
+    )
+
+    print(
+        f"Dataset shape: {df.shape}"
+    )
 
     return df
 
 
 # ============================================================
-# 2. DATA VALIDATION
+# DATA VALIDATION
 # ============================================================
 
 def validate_data(df):
@@ -94,7 +106,7 @@ def validate_data(df):
 
 
 # ============================================================
-# 3. DATASET METADATA
+# DATASET METADATA
 # ============================================================
 
 def metadata_analysis(df):
@@ -107,7 +119,7 @@ def metadata_analysis(df):
 
 
 # ============================================================
-# 4. DATA PROFILING
+# DATA PROFILING
 # ============================================================
 
 def profiling_analysis(df):
@@ -130,14 +142,18 @@ def profiling_analysis(df):
 
     else:
 
-        print("DataProfiler initialized.")
         print(
-            "No compatible profiling method found."
+            "DataProfiler initialized."
+        )
+
+        print(
+            "No compatible profiling "
+            "method found."
         )
 
 
 # ============================================================
-# 5. DATA QUALITY
+# DATA QUALITY
 # ============================================================
 
 def quality_analysis(df):
@@ -160,7 +176,10 @@ def quality_analysis(df):
 
     else:
 
-        print("DataQualityEngine initialized.")
+        print(
+            "DataQualityEngine initialized."
+        )
+
         print(
             "No compatible quality-analysis "
             "method found."
@@ -168,7 +187,7 @@ def quality_analysis(df):
 
 
 # ============================================================
-# 6. STATISTICAL INTELLIGENCE
+# STATISTICAL INTELLIGENCE
 # ============================================================
 
 def statistical_intelligence(df):
@@ -181,7 +200,9 @@ def statistical_intelligence(df):
 
     if len(numeric_columns) == 0:
 
-        print("No numeric columns found.")
+        print(
+            "No numeric columns found."
+        )
 
         return
 
@@ -190,19 +211,28 @@ def statistical_intelligence(df):
         series = df[column].dropna()
 
         if len(series) == 0:
+
             continue
 
         mean = series.mean()
+
         median = series.median()
+
         std = series.std()
 
         q1 = series.quantile(0.25)
+
         q3 = series.quantile(0.75)
 
         iqr = q3 - q1
 
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
+        lower_bound = (
+            q1 - 1.5 * iqr
+        )
+
+        upper_bound = (
+            q3 + 1.5 * iqr
+        )
 
         outlier_count = (
             (series < lower_bound)
@@ -220,7 +250,9 @@ def statistical_intelligence(df):
 
         elif skewness > 0.5:
 
-            distribution = "Right-Skewed"
+            distribution = (
+                "Right-Skewed"
+            )
 
         elif skewness < -1:
 
@@ -230,7 +262,9 @@ def statistical_intelligence(df):
 
         elif skewness < -0.5:
 
-            distribution = "Left-Skewed"
+            distribution = (
+                "Left-Skewed"
+            )
 
         else:
 
@@ -239,7 +273,10 @@ def statistical_intelligence(df):
             )
 
         print()
-        print(f"Column: {column}")
+
+        print(
+            f"Column: {column}"
+        )
 
         print(
             f"  Mean              : "
@@ -288,7 +325,7 @@ def statistical_intelligence(df):
 
 
 # ============================================================
-# 7. SEMANTIC INTELLIGENCE
+# SEMANTIC INTELLIGENCE
 # ============================================================
 
 def semantic_intelligence(df):
@@ -312,19 +349,25 @@ def semantic_intelligence(df):
         ]
 
         if dominant_values.empty:
+
             continue
 
         found = True
 
         print()
-        print(f"Column: {column}")
+
+        print(
+            f"Column: {column}"
+        )
 
         print(
             "  Dominant / Potential "
             "Sentinel Values:"
         )
 
-        for value, count in dominant_values.items():
+        for value, count in (
+            dominant_values.items()
+        ):
 
             percentage = (
                 count / len(df)
@@ -345,7 +388,7 @@ def semantic_intelligence(df):
 
 
 # ============================================================
-# 8. RELATIONSHIP INTELLIGENCE
+# RELATIONSHIP INTELLIGENCE
 # ============================================================
 
 def relationship_intelligence(df):
@@ -353,6 +396,7 @@ def relationship_intelligence(df):
     section("RELATIONSHIP INTELLIGENCE")
 
     print()
+
     print(
         "---------- NUMERIC CORRELATIONS ----------"
     )
@@ -369,15 +413,22 @@ def relationship_intelligence(df):
 
         found = False
 
-        for i in range(len(numeric_columns)):
+        for i in range(
+            len(numeric_columns)
+        ):
 
             for j in range(
                 i + 1,
                 len(numeric_columns)
             ):
 
-                column_a = numeric_columns[i]
-                column_b = numeric_columns[j]
+                column_a = (
+                    numeric_columns[i]
+                )
+
+                column_b = (
+                    numeric_columns[j]
+                )
 
                 correlation = (
                     correlation_matrix.loc[
@@ -387,9 +438,11 @@ def relationship_intelligence(df):
                 )
 
                 if pd.isna(correlation):
+
                     continue
 
                 if abs(correlation) < 0.30:
+
                     continue
 
                 found = True
@@ -419,7 +472,8 @@ def relationship_intelligence(df):
                     )
 
                 print(
-                    f"{column_a} <-> {column_b}"
+                    f"{column_a} <-> "
+                    f"{column_b}"
                 )
 
                 print(
@@ -456,26 +510,33 @@ def relationship_intelligence(df):
     if "y" not in df.columns:
 
         print(
-            "Target column 'y' does not exist."
+            "Target column 'y' "
+            "does not exist."
         )
 
         return
 
-    categorical_columns = df.select_dtypes(
-        include=[
-            "object",
-            "string",
-            "category"
-        ]
-    ).columns
+    categorical_columns = (
+        df.select_dtypes(
+            include=[
+                "object",
+                "string",
+                "category"
+            ]
+        ).columns
+    )
 
     for column in categorical_columns:
 
         if column == "y":
+
             continue
 
         print()
-        print(f"Column: {column}")
+
+        print(
+            f"Column: {column}"
+        )
 
         try:
 
@@ -517,7 +578,7 @@ def relationship_intelligence(df):
 
 
 # ============================================================
-# 9. ANOMALY INTELLIGENCE
+# ANOMALY INTELLIGENCE
 # ============================================================
 
 def anomaly_intelligence(df):
@@ -530,7 +591,7 @@ def anomaly_intelligence(df):
 
 
 # ============================================================
-# 10. FEATURE ENGINEERING
+# FEATURE ENGINEERING
 # ============================================================
 
 def feature_engineering_analysis(df):
@@ -548,21 +609,28 @@ def feature_engineering_analysis(df):
         df = engine.create_features(df)
 
         print()
+
         print(
             "Feature engineering completed."
         )
 
         print(
             "Dataset shape after "
-            f"feature engineering: {df.shape}"
+            f"feature engineering: "
+            f"{df.shape}"
         )
 
         print()
-        print("Current columns:")
+
+        print(
+            "Current columns:"
+        )
 
         for column in df.columns:
 
-            print(f"• {column}")
+            print(
+                f"• {column}"
+            )
 
         return df
 
@@ -583,7 +651,7 @@ def feature_engineering_analysis(df):
 
 
 # ============================================================
-# 11. FEATURE VALIDATION
+# FEATURE VALIDATION
 # ============================================================
 
 def feature_validation(df):
@@ -596,7 +664,9 @@ def feature_validation(df):
 
     validator = FeatureValidator()
 
-    validation_result = validator.validate(df)
+    validation_result = (
+        validator.validate(df)
+    )
 
     if validation_result is False:
 
@@ -605,16 +675,17 @@ def feature_validation(df):
         )
 
     print()
+
     print(
         "Feature validation completed."
     )
 
 
 # ============================================================
-# 12. MODEL TRAINING
+# MODEL TRAINING
 # ============================================================
 
-def model_training_analysis(df):
+def model_training(df):
 
     section("MODEL TRAINING")
 
@@ -628,7 +699,15 @@ def model_training_analysis(df):
 
         results = trainer.run(df)
 
+        if results is None:
+
+            raise RuntimeError(
+                "Model training returned "
+                "no results."
+            )
+
         print()
+
         print(
             "Model training completed."
         )
@@ -652,6 +731,95 @@ def model_training_analysis(df):
 
 
 # ============================================================
+# MODEL COMPARISON
+# ============================================================
+
+def model_comparison(df):
+
+    section("MODEL COMPARISON")
+
+    logger.info(
+        "Starting model comparison..."
+    )
+
+    try:
+
+        comparator = ModelComparator()
+
+        comparison_result = (
+            comparator.run(df)
+        )
+
+        if comparison_result is None:
+
+            raise RuntimeError(
+                "Model comparison returned "
+                "no result."
+            )
+
+        results = (
+            comparison_result.get(
+                "results"
+            )
+        )
+
+        best_model_name = (
+            comparison_result.get(
+                "best_model_name"
+            )
+        )
+
+        print()
+
+        print(
+            "---------- MODEL "
+            "COMPARISON SUMMARY ----------"
+        )
+
+        if results is not None:
+
+            print()
+
+            print(
+                results.to_string(
+                    index=False,
+                    float_format=lambda value:
+                    f"{value:.4f}"
+                )
+            )
+
+        print()
+
+        print(
+            f"Best Model: "
+            f"{best_model_name}"
+        )
+
+        print()
+
+        print(
+            "Model comparison completed."
+        )
+
+        return comparison_result
+
+    except Exception as error:
+
+        logger.exception(
+            "Model comparison failed."
+        )
+
+        print()
+
+        print(
+            f"Model comparison error: "
+            f"{error}"
+        )
+
+        raise
+
+
+# ============================================================
 # MAIN PIPELINE
 # ============================================================
 
@@ -662,7 +830,8 @@ def main():
     print("=" * 70)
 
     print(
-        "        ENTERPRISE DATA INTELLIGENCE PLATFORM"
+        "        ENTERPRISE DATA "
+        "INTELLIGENCE PLATFORM"
     )
 
     print("=" * 70)
@@ -727,7 +896,9 @@ def main():
         # 10. FEATURE ENGINEERING
         # ----------------------------------------------------
 
-        df = feature_engineering_analysis(df)
+        df = feature_engineering_analysis(
+            df
+        )
 
         # ----------------------------------------------------
         # 11. FEATURE VALIDATION
@@ -739,13 +910,25 @@ def main():
         # 12. MODEL TRAINING
         # ----------------------------------------------------
 
-        model_results = model_training_analysis(df)
+        model_results = model_training(
+            df
+        )
 
         # ----------------------------------------------------
-        # 13. PIPELINE COMPLETE
+        # 13. MODEL COMPARISON
         # ----------------------------------------------------
 
-        section("PIPELINE COMPLETE")
+        comparison_results = (
+            model_comparison(df)
+        )
+
+        # ----------------------------------------------------
+        # 14. PIPELINE COMPLETE
+        # ----------------------------------------------------
+
+        section(
+            "PIPELINE COMPLETE"
+        )
 
         print()
 
@@ -767,12 +950,19 @@ def main():
         # MODEL SUMMARY
         # ----------------------------------------------------
 
+        print()
+
+        print(
+            "---------- MODEL SUMMARY ----------"
+        )
+
         if model_results:
 
             print()
 
             print(
-                "---------- MODEL SUMMARY ----------"
+                "Baseline Model: "
+                "Logistic Regression"
             )
 
             print(
@@ -800,6 +990,15 @@ def main():
                 f"{model_results['roc_auc']:.4f}"
             )
 
+        if comparison_results:
+
+            print()
+
+            print(
+                f"Best Model: "
+                f"{comparison_results['best_model_name']}"
+            )
+
         print()
 
         print(
@@ -817,7 +1016,11 @@ def main():
         print()
 
         print("=" * 70)
-        print("PIPELINE FAILED")
+
+        print(
+            "PIPELINE FAILED"
+        )
+
         print("=" * 70)
 
         print()
@@ -838,7 +1041,11 @@ def main():
         print()
 
         print("=" * 70)
-        print("PIPELINE FAILED")
+
+        print(
+            "PIPELINE FAILED"
+        )
+
         print("=" * 70)
 
         print()
@@ -855,4 +1062,5 @@ def main():
 # ============================================================
 
 if __name__ == "__main__":
+
     main()
