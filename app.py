@@ -18,6 +18,10 @@ from src.feature_validation.feature_validator import (
     FeatureValidator
 )
 
+from src.modeling.model_trainer import (
+    ModelTrainer
+)
+
 
 # ============================================================
 # CONFIGURATION
@@ -43,6 +47,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def section(title):
+
     print()
     print("=" * 70)
     print(f"{title:^70}")
@@ -50,7 +55,7 @@ def section(title):
 
 
 # ============================================================
-# DATA INGESTION
+# 1. DATA INGESTION
 # ============================================================
 
 def load_data():
@@ -76,7 +81,7 @@ def load_data():
 
 
 # ============================================================
-# DATA VALIDATION
+# 2. DATA VALIDATION
 # ============================================================
 
 def validate_data(df):
@@ -89,7 +94,7 @@ def validate_data(df):
 
 
 # ============================================================
-# DATASET METADATA
+# 3. DATASET METADATA
 # ============================================================
 
 def metadata_analysis(df):
@@ -102,7 +107,7 @@ def metadata_analysis(df):
 
 
 # ============================================================
-# DATA PROFILING
+# 4. DATA PROFILING
 # ============================================================
 
 def profiling_analysis(df):
@@ -126,11 +131,13 @@ def profiling_analysis(df):
     else:
 
         print("DataProfiler initialized.")
-        print("No compatible profiling method found.")
+        print(
+            "No compatible profiling method found."
+        )
 
 
 # ============================================================
-# DATA QUALITY
+# 5. DATA QUALITY
 # ============================================================
 
 def quality_analysis(df):
@@ -161,7 +168,7 @@ def quality_analysis(df):
 
 
 # ============================================================
-# STATISTICAL INTELLIGENCE
+# 6. STATISTICAL INTELLIGENCE
 # ============================================================
 
 def statistical_intelligence(df):
@@ -207,7 +214,9 @@ def statistical_intelligence(df):
 
         if skewness > 1:
 
-            distribution = "Highly Right-Skewed"
+            distribution = (
+                "Highly Right-Skewed"
+            )
 
         elif skewness > 0.5:
 
@@ -215,7 +224,9 @@ def statistical_intelligence(df):
 
         elif skewness < -1:
 
-            distribution = "Highly Left-Skewed"
+            distribution = (
+                "Highly Left-Skewed"
+            )
 
         elif skewness < -0.5:
 
@@ -277,7 +288,7 @@ def statistical_intelligence(df):
 
 
 # ============================================================
-# SEMANTIC INTELLIGENCE
+# 7. SEMANTIC INTELLIGENCE
 # ============================================================
 
 def semantic_intelligence(df):
@@ -334,7 +345,7 @@ def semantic_intelligence(df):
 
 
 # ============================================================
-# RELATIONSHIP INTELLIGENCE
+# 8. RELATIONSHIP INTELLIGENCE
 # ============================================================
 
 def relationship_intelligence(df):
@@ -506,7 +517,7 @@ def relationship_intelligence(df):
 
 
 # ============================================================
-# ANOMALY INTELLIGENCE
+# 9. ANOMALY INTELLIGENCE
 # ============================================================
 
 def anomaly_intelligence(df):
@@ -519,7 +530,7 @@ def anomaly_intelligence(df):
 
 
 # ============================================================
-# FEATURE ENGINEERING
+# 10. FEATURE ENGINEERING
 # ============================================================
 
 def feature_engineering_analysis(df):
@@ -572,7 +583,7 @@ def feature_engineering_analysis(df):
 
 
 # ============================================================
-# FEATURE VALIDATION
+# 11. FEATURE VALIDATION
 # ============================================================
 
 def feature_validation(df):
@@ -597,6 +608,47 @@ def feature_validation(df):
     print(
         "Feature validation completed."
     )
+
+
+# ============================================================
+# 12. MODEL TRAINING
+# ============================================================
+
+def model_training_analysis(df):
+
+    section("MODEL TRAINING")
+
+    logger.info(
+        "Starting model training..."
+    )
+
+    try:
+
+        trainer = ModelTrainer()
+
+        results = trainer.run(df)
+
+        print()
+        print(
+            "Model training completed."
+        )
+
+        return results
+
+    except Exception as error:
+
+        logger.exception(
+            "Model training failed."
+        )
+
+        print()
+
+        print(
+            f"Model training error: "
+            f"{error}"
+        )
+
+        raise
 
 
 # ============================================================
@@ -684,7 +736,13 @@ def main():
         feature_validation(df)
 
         # ----------------------------------------------------
-        # 12. PIPELINE COMPLETE
+        # 12. MODEL TRAINING
+        # ----------------------------------------------------
+
+        model_results = model_training_analysis(df)
+
+        # ----------------------------------------------------
+        # 13. PIPELINE COMPLETE
         # ----------------------------------------------------
 
         section("PIPELINE COMPLETE")
@@ -704,6 +762,43 @@ def main():
         print(
             f"Columns : {df.shape[1]}"
         )
+
+        # ----------------------------------------------------
+        # MODEL SUMMARY
+        # ----------------------------------------------------
+
+        if model_results:
+
+            print()
+
+            print(
+                "---------- MODEL SUMMARY ----------"
+            )
+
+            print(
+                f"Accuracy : "
+                f"{model_results['accuracy']:.4f}"
+            )
+
+            print(
+                f"Precision: "
+                f"{model_results['precision']:.4f}"
+            )
+
+            print(
+                f"Recall   : "
+                f"{model_results['recall']:.4f}"
+            )
+
+            print(
+                f"F1 Score : "
+                f"{model_results['f1']:.4f}"
+            )
+
+            print(
+                f"ROC-AUC  : "
+                f"{model_results['roc_auc']:.4f}"
+            )
 
         print()
 
