@@ -8,6 +8,9 @@ from src.profiling.metadata import MetadataExtractor
 from src.profiling.profiler import DataProfiler
 from src.profiling.quality import DataQualityEngine
 from src.profiling.anomalies import AnomalyEngine
+from src.feature_engineering.feature_engineer import FeatureEngineeringEngine
+
+
 
 
 DATA_FILE = "data/raw/bank-full.csv"
@@ -343,6 +346,39 @@ def anomaly_intelligence(df):
     engine.analyze(df)
 
 
+def feature_engineering_analysis(df):
+    section("FEATURE ENGINEERING")
+
+    logger.info("Starting feature engineering...")
+
+    try:
+        engine = FeatureEngineeringEngine()
+
+        df = engine.create_features(df)
+
+        print()
+        print("Feature engineering completed.")
+        print(f"Dataset shape after feature engineering: {df.shape}")
+
+        print()
+        print("Current columns:")
+
+        for column in df.columns:
+            print(f"• {column}")
+
+        return df
+
+    except Exception as error:
+        logger.exception(
+            "Feature engineering failed."
+        )
+
+        print()
+        print(f"Feature engineering error: {error}")
+
+        raise
+
+
 def main():
 
     print()
@@ -372,13 +408,17 @@ def main():
 
         anomaly_intelligence(df)
 
+        df = feature_engineering_analysis(df)
+
         section("PIPELINE COMPLETE")
 
         print()
         print("Dataset successfully processed.")
+
         print()
         print(f"Rows    : {df.shape[0]}")
         print(f"Columns : {df.shape[1]}")
+
         print()
         print(
             "Enterprise Data Intelligence "
@@ -397,6 +437,7 @@ def main():
         print("PIPELINE FAILED")
         print("=" * 70)
         print()
+
         print(
             f"Could not find dataset:\n"
             f"{DATA_FILE}"
@@ -415,6 +456,7 @@ def main():
         print("PIPELINE FAILED")
         print("=" * 70)
         print()
+
         print(f"Error: {error}")
 
         sys.exit(1)
