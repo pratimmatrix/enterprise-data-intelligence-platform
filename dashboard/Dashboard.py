@@ -1,7 +1,32 @@
+# ============================================================
+# ENTERPRISE DATA INTELLIGENCE PLATFORM
+# STREAMLIT DECISION INTELLIGENCE DASHBOARD
+# ============================================================
+
+import sys
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import joblib
-from pathlib import Path
+
+
+# ============================================================
+# PROJECT ROOT
+# ============================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+# ============================================================
+# PROJECT IMPORTS
+# ============================================================
+
+from src.business_rules.DecisionEngine import DecisionEngine
+
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -13,11 +38,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ============================================================
-# PATHS
-# ============================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# ============================================================
+# MODEL PATH
+# ============================================================
 
 MODEL_PATH = (
     Path.home()
@@ -26,33 +50,267 @@ MODEL_PATH = (
     / "random_forest_pipeline.pkl"
 )
 
-DATA_PATH = PROJECT_ROOT / "bank-full.csv"
 
 # ============================================================
-# LOAD MODEL
+# MODEL METRICS
 # ============================================================
 
-@st.cache_resource
+MODEL_NAME = "Random Forest Classifier"
+PIPELINE_NAME = "Preprocessor + Random Forest"
+SELECTION_METHOD = "F1 Score"
+
+ROC_AUC = 0.7946
+F1_SCORE = 0.4297
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "decision_engine" not in st.session_state:
+
+    st.session_state.decision_engine = DecisionEngine()
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def create_engineered_features(customer):
+    """
+    Create the same engineered features used by the
+    Enterprise Data Intelligence Platform.
+    """
+
+    customer = customer.copy()
+
+    # --------------------------------------------------------
+    # AGE GROUP
+    # --------------------------------------------------------
+
+    age = customer["age"]
+
+    if age <= 20:
+        customer["age_group"] = "0-20"
+
+    elif age <= 30:
+        customer["age_group"] = "21-30"
+
+    elif age <= 40:
+        customer["age_group"] = "31-40"
+
+    elif age <= 50:
+        customer["age_group"] = "41-50"
+
+    elif age <= 60:
+        customer["age_group"] = "51-60"
+
+    else:
+        customer["age_group"] = "61+"
+
+
+    # --------------------------------------------------------
+    # BALANCE LOG
+    # --------------------------------------------------------
+
+    import math
+
+    customer["balance_log"] = math.log1p(
+        abs(customer["balance"])
+    )
+
+
+    # --------------------------------------------------------
+    # CAMPAIGN LOG
+    # --------------------------------------------------------
+
+    customer["campaign_log"] = math.log1p(
+        customer["campaign"]
+    )
+
+
+    # --------------------------------------------------------
+    # PREVIOUS CONTACT
+    # --------------------------------------------------------
+
+    customer["previous_contact"] = int(
+        customer["pdays"] != -1
+    )
+
+
+    # --------------------------------------------------------
+    # PREVIOUSLY CONTACTED
+    # --------------------------------------------------------
+
+    customer["previously_contacted"] = int(
+        customer["previous"] > 0
+    )
+
+
+    # --------------------------------------------------------
+    # ZERO BALANCE
+    # --------------------------------------------------------
+
+    customer["zero_balance"] = int(
+        customer["balance"] == 0
+    )
+
+
+    # --------------------------------------------------------
+    # LOAN BURDEN
+    # --------------------------------------------------------
+
+    customer["loan_burden"] = int(
+        customer["housing"] == "yes"
+        and customer["loan"] == "yes"
+    )
+
+
+    # --------------------------------------------------------
+    # CAMPAIGN INTENSITY
+    # --------------------------------------------------------
+
+    campaign = customer["campaign"]
+
+    if campaign <= 2:
+
+        customer["campaign_intensity"] = "low"
+
+    elif campaign <= 5:
+
+        customer["campaign_intensity"] = "medium"
+
+    else:
+
+        customer["campaign_intensity"] = "high"
+
+
+    # --------------------------------------------------------
+    # UNKNOWN CONTACT
+    # --------------------------------------------------------
+
+    customer["contact_unknown"] = int(
+        customer["contact"] == "unknown"
+    )
+
+
+    # --------------------------------------------------------
+    # PREVIOUS SUCCESS
+    # --------------------------------------------------------
+
+    customer["previous_success"] = int(
+        customer["poutcome"] == "success"
+    )
+
+
+    return customer
+
+
 def load_model():
 
     if not MODEL_PATH.exists():
 
-        st.error(
-            f"Model not found:\n{MODEL_PATH}"
+        return None
+
+    return joblib.load(
+        MODEL_PATH
+    )
+
+
+def get_top_features():
+
+    model = load_model()
+
+    if model is None:
+
+        return pd.DataFrame(
+            columns=[
+                "feature",
+                "importance"
+            ]
         )
 
-        st.stop()
+    try:
 
-    return joblib.load(MODEL_PATH)
+        preprocessor = (
+            model.named_steps["preprocessor"]
+        )
+
+        classifier = (
+            model.named_steps["classifier"]
+        )
+
+        feature_names = (
+            preprocessor
+            .get_feature_names_out()
+        )
+
+        importances = (
+            classifier.feature_importances_
+        )
+
+        feature_data = sorted(
+            zip(
+                feature_names,
+                importances
+            ),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        feature_data = feature_data[:10]
+
+        return pd.DataFrame(
+            feature_data,
+            columns=[
+                "feature",
+                "importance"
+            ]
+        )
+
+    except Exception:
+
+        return pd.DataFrame(
+            columns=[
+                "feature",
+                "importance"
+            ]
+        )
 
 
-model = load_model()
+def normalize_prediction(prediction):
+
+    if isinstance(
+        prediction,
+        str
+    ):
+
+        value = prediction.upper()
+
+        if value in [
+            "YES",
+            "NO"
+        ]:
+
+            return value
+
+    if prediction in [
+        1,
+        True
+    ]:
+
+        return "YES"
+
+    return "NO"
+
 
 # ============================================================
-# PAGE TITLE
+# HEADER
 # ============================================================
 
-st.title("📊 Enterprise Data Intelligence Platform")
+st.title(
+    "📊 Enterprise Data Intelligence Platform"
+)
 
 st.caption(
     "AI-powered customer campaign decision intelligence"
@@ -60,598 +318,773 @@ st.caption(
 
 st.divider()
 
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-st.sidebar.header("Customer Information")
-
-age = st.sidebar.number_input(
-    "Age",
-    min_value=18,
-    max_value=100,
-    value=35
-)
-
-job = st.sidebar.selectbox(
-    "Job",
-    [
-        "admin.",
-        "blue-collar",
-        "entrepreneur",
-        "housemaid",
-        "management",
-        "retired",
-        "self-employed",
-        "services",
-        "student",
-        "technician",
-        "unemployed",
-        "unknown"
-    ],
-    index=4
-)
-
-marital = st.sidebar.selectbox(
-    "Marital Status",
-    ["married", "single", "divorced"]
-)
-
-education = st.sidebar.selectbox(
-    "Education",
-    ["primary", "secondary", "tertiary", "unknown"],
-    index=2
-)
-
-default = st.sidebar.selectbox(
-    "Credit Default",
-    ["no", "yes"]
-)
-
-balance = st.sidebar.number_input(
-    "Account Balance",
-    value=1500
-)
-
-housing = st.sidebar.selectbox(
-    "Housing Loan",
-    ["yes", "no"]
-)
-
-loan = st.sidebar.selectbox(
-    "Personal Loan",
-    ["yes", "no"]
-)
-
-contact = st.sidebar.selectbox(
-    "Contact Channel",
-    ["cellular", "telephone", "unknown"],
-    index=0
-)
-
-day = st.sidebar.number_input(
-    "Contact Day",
-    min_value=1,
-    max_value=31,
-    value=15
-)
-
-month = st.sidebar.selectbox(
-    "Month",
-    [
-        "jan",
-        "feb",
-        "mar",
-        "apr",
-        "may",
-        "jun",
-        "jul",
-        "aug",
-        "sep",
-        "oct",
-        "nov",
-        "dec"
-    ],
-    index=4
-)
-
-duration = st.sidebar.number_input(
-    "Contact Duration (seconds)",
-    min_value=0,
-    value=300
-)
-
-campaign = st.sidebar.number_input(
-    "Campaign Contacts",
-    min_value=1,
-    value=2
-)
-
-pdays = st.sidebar.number_input(
-    "Days Since Previous Contact",
-    value=-1
-)
-
-previous = st.sidebar.number_input(
-    "Previous Contacts",
-    min_value=0,
-    value=0
-)
-
-poutcome = st.sidebar.selectbox(
-    "Previous Campaign Outcome",
-    [
-        "unknown",
-        "failure",
-        "other",
-        "success"
-    ]
-)
 
 # ============================================================
-# FEATURE ENGINEERING
+# CUSTOMER INPUT
 # ============================================================
 
-def create_features():
-
-    customer = {
-
-        "age": age,
-        "job": job,
-        "marital": marital,
-        "education": education,
-        "default": default,
-        "balance": balance,
-        "housing": housing,
-        "loan": loan,
-        "contact": contact,
-        "day": day,
-        "month": month,
-        "duration": duration,
-        "campaign": campaign,
-        "pdays": pdays,
-        "previous": previous,
-        "poutcome": poutcome,
-
-        "age_group": (
-            "18-30" if age <= 30
-            else "31-40" if age <= 40
-            else "41-50" if age <= 50
-            else "51-60" if age <= 60
-            else "61-70" if age <= 70
-            else "71+"
-        ),
-
-        "balance_log": (
-            __import__("numpy").log1p(
-                abs(balance)
-            )
-        ),
-
-        "campaign_log": (
-            __import__("numpy").log1p(
-                campaign
-            )
-        ),
-
-        "previous_contact": (
-            1 if previous > 0 else 0
-        ),
-
-        "previously_contacted": (
-            1 if pdays != -1 else 0
-        ),
-
-        "zero_balance": (
-            1 if balance == 0 else 0
-        ),
-
-        "loan_burden": (
-            1 if loan == "yes" else 0
-        ),
-
-        "campaign_intensity": (
-            "low" if campaign <= 2
-            else "medium" if campaign <= 5
-            else "high"
-        ),
-
-        "contact_unknown": (
-            1 if contact == "unknown" else 0
-        ),
-
-        "previous_success": (
-            1 if poutcome == "success" else 0
-        )
-    }
-
-    return pd.DataFrame([customer])
+st.header(
+    "👤 Customer Information"
+)
 
 
-# ============================================================
-# PREDICTION
-# ============================================================
-
-st.subheader("Customer Decision")
-
-if st.button(
-    "🚀 Generate Decision",
-    use_container_width=True
+with st.form(
+    "customer_form"
 ):
 
-    customer_df = create_features()
+    col1, col2, col3 = st.columns(3)
 
-    try:
 
-        prediction = model.predict(
-            customer_df
-        )[0]
+    # --------------------------------------------------------
+    # COLUMN 1
+    # --------------------------------------------------------
 
-        probability = model.predict_proba(
-            customer_df
-        )[0][1]
+    with col1:
 
-        probability_percent = (
-            probability * 100
+        age = st.number_input(
+            "Age",
+            min_value=18,
+            max_value=100,
+            value=35
         )
 
-        # ----------------------------------------------------
-        # RISK CATEGORY
-        # ----------------------------------------------------
-
-        if probability_percent >= 70:
-
-            risk = "HIGH"
-
-        elif probability_percent >= 40:
-
-            risk = "MEDIUM"
-
-        else:
-
-            risk = "LOW"
-
-        # ----------------------------------------------------
-        # BUSINESS PRIORITY
-        # ----------------------------------------------------
-
-        if risk == "HIGH":
-
-            priority = "HIGH"
-
-            action = (
-                "Prioritize customer for immediate "
-                "campaign outreach."
-            )
-
-        elif risk == "MEDIUM":
-
-            priority = "MEDIUM"
-
-            action = (
-                "Include customer in standard "
-                "marketing follow-up."
-            )
-
-        else:
-
-            priority = "LOW"
-
-            action = (
-                "Do not prioritize customer for "
-                "immediate campaign outreach."
-            )
-
-        # ----------------------------------------------------
-        # DISPLAY METRICS
-        # ----------------------------------------------------
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-
-            st.metric(
-                "Prediction",
-                str(prediction).upper()
-            )
-
-        with col2:
-
-            st.metric(
-                "Probability",
-                f"{probability_percent:.2f}%"
-            )
-
-        with col3:
-
-            st.metric(
-                "Risk Category",
-                risk
-            )
-
-        with col4:
-
-            st.metric(
-                "Priority",
-                priority
-            )
-
-        st.divider()
-
-        # ====================================================
-        # BUSINESS DECISION
-        # ====================================================
-
-        st.subheader(
-            "💼 Business Decision"
+        job = st.selectbox(
+            "Job",
+            [
+                "admin.",
+                "blue-collar",
+                "entrepreneur",
+                "housemaid",
+                "management",
+                "retired",
+                "self-employed",
+                "services",
+                "student",
+                "technician",
+                "unemployed",
+                "unknown"
+            ],
+            index=4
         )
 
-        if priority == "HIGH":
-
-            st.success(action)
-
-        elif priority == "MEDIUM":
-
-            st.warning(action)
-
-        else:
-
-            st.info(action)
-
-        # ====================================================
-        # BUSINESS INSIGHTS
-        # ====================================================
-
-        st.subheader(
-            "💡 Business Insights"
+        marital = st.selectbox(
+            "Marital Status",
+            [
+                "married",
+                "single",
+                "divorced"
+            ],
+            index=0
         )
 
-        if prediction == "yes":
-
-            st.write(
-                "• Customer shows a positive likelihood "
-                "of responding to the campaign."
-            )
-
-        else:
-
-            st.write(
-                "• Customer shows a lower likelihood "
-                "of responding to the campaign."
-            )
-
-        if probability_percent >= 70:
-
-            st.write(
-                "• Prediction probability is high, "
-                "indicating a strong model signal."
-            )
-
-        elif probability_percent >= 40:
-
-            st.write(
-                "• Prediction probability is moderate, "
-                "indicating some potential for customer response."
-            )
-
-        else:
-
-            st.write(
-                "• Prediction probability is low, "
-                "indicating a weak likelihood of customer response."
-            )
-
-        st.write(
-            f"• Risk category is classified as **{risk}**."
+        education = st.selectbox(
+            "Education",
+            [
+                "primary",
+                "secondary",
+                "tertiary",
+                "unknown"
+            ],
+            index=2
         )
 
-        # ====================================================
-        # CUSTOMER PROFILE
-        # ====================================================
-
-        st.subheader(
-            "👤 Customer Profile"
+        default = st.selectbox(
+            "Credit Default",
+            [
+                "no",
+                "yes"
+            ],
+            index=0
         )
 
-        profile_col1, profile_col2 = st.columns(2)
 
-        with profile_col1:
+    # --------------------------------------------------------
+    # COLUMN 2
+    # --------------------------------------------------------
 
-            st.write(
-                f"**Age:** {age}"
-            )
+    with col2:
 
-            st.write(
-                f"**Job:** {job}"
-            )
-
-            st.write(
-                f"**Education:** {education}"
-            )
-
-            st.write(
-                f"**Balance:** {balance}"
-            )
-
-            st.write(
-                f"**Housing Loan:** {housing}"
-            )
-
-        with profile_col2:
-
-            st.write(
-                f"**Campaign Contacts:** {campaign}"
-            )
-
-            st.write(
-                f"**Previous Contacts:** {previous}"
-            )
-
-            st.write(
-                f"**Previous Outcome:** {poutcome}"
-            )
-
-            st.write(
-                f"**Contact Channel:** {contact}"
-            )
-
-            st.write(
-                f"**Duration:** {duration} seconds"
-            )
-
-        # ====================================================
-        # MODEL INFORMATION
-        # ====================================================
-
-        st.subheader(
-            "🤖 Model Information"
+        balance = st.number_input(
+            "Account Balance",
+            value=1500,
+            step=100
         )
 
-        st.write(
-            "Model: **Random Forest Classifier**"
+        housing = st.selectbox(
+            "Housing Loan",
+            [
+                "yes",
+                "no"
+            ],
+            index=0
         )
 
-        st.write(
-            "Pipeline: **Preprocessor + Random Forest**"
+        loan = st.selectbox(
+            "Personal Loan",
+            [
+                "no",
+                "yes"
+            ],
+            index=0
         )
 
-        st.write(
-            "Selected using **F1 Score**"
+        contact = st.selectbox(
+            "Contact Channel",
+            [
+                "cellular",
+                "telephone",
+                "unknown"
+            ],
+            index=0
         )
 
-        st.write(
-            "ROC-AUC: **0.7946**"
+        day = st.number_input(
+            "Contact Day",
+            min_value=1,
+            max_value=31,
+            value=15
         )
 
-        st.write(
-            "F1 Score: **0.4297**"
+
+    # --------------------------------------------------------
+    # COLUMN 3
+    # --------------------------------------------------------
+
+    with col3:
+
+        month = st.selectbox(
+            "Month",
+            [
+                "jan",
+                "feb",
+                "mar",
+                "apr",
+                "may",
+                "jun",
+                "jul",
+                "aug",
+                "sep",
+                "oct",
+                "nov",
+                "dec"
+            ],
+            index=4
         )
 
-        # ====================================================
-        # FEATURE IMPORTANCE
-        # ====================================================
-
-        st.subheader(
-            "📈 Top Model Features"
+        duration = st.number_input(
+            "Contact Duration (seconds)",
+            min_value=0,
+            value=300,
+            step=10
         )
+
+        campaign = st.number_input(
+            "Campaign Contacts",
+            min_value=1,
+            value=2,
+            step=1
+        )
+
+        pdays = st.number_input(
+            "Days Since Previous Contact",
+            min_value=-1,
+            value=-1,
+            step=1
+        )
+
+        previous = st.number_input(
+            "Previous Contacts",
+            min_value=0,
+            value=0,
+            step=1
+        )
+
+
+    poutcome = st.selectbox(
+        "Previous Campaign Outcome",
+        [
+            "unknown",
+            "failure",
+            "other",
+            "success"
+        ],
+        index=0
+    )
+
+
+    st.divider()
+
+
+    submitted = st.form_submit_button(
+        "🚀 Analyze Customer",
+        use_container_width=True
+    )
+
+
+# ============================================================
+# RUN DECISION ENGINE
+# ============================================================
+
+if submitted:
+
+    raw_customer = {
+
+        "age": age,
+
+        "job": job,
+
+        "marital": marital,
+
+        "education": education,
+
+        "default": default,
+
+        "balance": balance,
+
+        "housing": housing,
+
+        "loan": loan,
+
+        "contact": contact,
+
+        "day": day,
+
+        "month": month,
+
+        "duration": duration,
+
+        "campaign": campaign,
+
+        "pdays": pdays,
+
+        "previous": previous,
+
+        "poutcome": poutcome
+    }
+
+
+    customer_data = create_engineered_features(
+        raw_customer
+    )
+
+
+    with st.spinner(
+        "Running enterprise decision pipeline..."
+    ):
 
         try:
 
-            preprocessor = (
-                model.named_steps[
-                    "preprocessor"
-                ]
+            engine = (
+                st.session_state
+                .decision_engine
             )
 
-            classifier = (
-                model.named_steps[
-                    "classifier"
-                ]
+            result = engine.run(
+                customer_data
             )
 
-            feature_names = (
-                preprocessor
-                .get_feature_names_out()
+            st.session_state.result = result
+
+            st.session_state.customer = (
+                customer_data
             )
 
-            importances = (
-                classifier.feature_importances_
+        except Exception as error:
+
+            st.error(
+                f"Prediction failed: {error}"
             )
 
-            importance_df = pd.DataFrame({
+            st.stop()
 
-                "Feature":
-                    feature_names,
 
-                "Importance":
-                    importances
+# ============================================================
+# DISPLAY RESULT
+# ============================================================
 
-            })
+if "result" in st.session_state:
 
-            importance_df = (
-                importance_df
-                .sort_values(
-                    "Importance",
-                    ascending=False
-                )
-                .head(10)
+    result = (
+        st.session_state.result
+    )
+
+    customer = (
+        st.session_state.customer
+    )
+
+
+    st.divider()
+
+    st.header(
+        "🎯 Customer Decision"
+    )
+
+
+    # --------------------------------------------------------
+    # NORMALIZE VALUES
+    # --------------------------------------------------------
+
+    prediction = normalize_prediction(
+        result.get(
+            "prediction",
+            "NO"
+        )
+    )
+
+
+    probability = float(
+        result.get(
+            "probability_percent",
+            0
+        )
+    )
+
+
+    risk = result.get(
+        "risk_category",
+        "UNKNOWN"
+    )
+
+
+    priority = result.get(
+        "priority",
+        "UNKNOWN"
+    )
+
+
+    # --------------------------------------------------------
+    # DECISION METRICS
+    # --------------------------------------------------------
+
+    col1, col2, col3, col4 = st.columns(4)
+
+
+    with col1:
+
+        st.metric(
+            "Prediction",
+            prediction
+        )
+
+
+    with col2:
+
+        st.metric(
+            "Probability",
+            f"{probability:.2f}%"
+        )
+
+
+    with col3:
+
+        st.metric(
+            "Risk Category",
+            risk
+        )
+
+
+    with col4:
+
+        st.metric(
+            "Priority",
+            priority
+        )
+
+
+    # --------------------------------------------------------
+    # BUSINESS DECISION
+    # --------------------------------------------------------
+
+    st.subheader(
+        "💼 Business Decision"
+    )
+
+
+    st.info(
+        result.get(
+            "recommended_action",
+            "No recommendation available."
+        )
+    )
+
+
+    # ========================================================
+    # BUSINESS INSIGHTS
+    # ========================================================
+
+    st.subheader(
+        "💡 Business Insights"
+    )
+
+
+    insights = result.get(
+        "insights",
+        []
+    )
+
+
+    if insights:
+
+        for insight in insights:
+
+            st.markdown(
+                f"• {insight}"
             )
 
-            importance_df = (
-                importance_df
-                .set_index("Feature")
+    else:
+
+        st.info(
+            "No business insights available."
+        )
+
+
+    # ========================================================
+    # CUSTOMER PROFILE
+    # ========================================================
+
+    st.subheader(
+        "👤 Customer Profile"
+    )
+
+
+    profile_col1, profile_col2 = (
+        st.columns(2)
+    )
+
+
+    with profile_col1:
+
+        st.markdown(
+            f"**Age:** {customer['age']}"
+        )
+
+        st.markdown(
+            f"**Job:** {customer['job']}"
+        )
+
+        st.markdown(
+            f"**Education:** {customer['education']}"
+        )
+
+        st.markdown(
+            f"**Balance:** {customer['balance']}"
+        )
+
+        st.markdown(
+            f"**Housing Loan:** {customer['housing']}"
+        )
+
+        st.markdown(
+            f"**Personal Loan:** {customer['loan']}"
+        )
+
+
+    with profile_col2:
+
+        st.markdown(
+            f"**Campaign Contacts:** "
+            f"{customer['campaign']}"
+        )
+
+        st.markdown(
+            f"**Previous Contacts:** "
+            f"{customer['previous']}"
+        )
+
+        st.markdown(
+            f"**Previous Outcome:** "
+            f"{customer['poutcome']}"
+        )
+
+        st.markdown(
+            f"**Contact Channel:** "
+            f"{customer['contact']}"
+        )
+
+        st.markdown(
+            f"**Duration:** "
+            f"{customer['duration']} seconds"
+        )
+
+        st.markdown(
+            f"**Campaign Intensity:** "
+            f"{customer['campaign_intensity']}"
+        )
+
+        st.markdown(
+            f"**Age Group:** "
+            f"{customer['age_group']}"
+        )
+
+
+    # ========================================================
+    # MODEL INFORMATION
+    # ========================================================
+
+    st.subheader(
+        "🤖 Model Information"
+    )
+
+
+    model_col1, model_col2 = (
+        st.columns(2)
+    )
+
+
+    with model_col1:
+
+        st.markdown(
+            f"**Model:** {MODEL_NAME}"
+        )
+
+        st.markdown(
+            f"**Pipeline:** {PIPELINE_NAME}"
+        )
+
+        st.markdown(
+            f"**Selection:** {SELECTION_METHOD}"
+        )
+
+
+    with model_col2:
+
+        st.markdown(
+            f"**ROC-AUC:** {ROC_AUC:.4f}"
+        )
+
+        st.markdown(
+            f"**F1 Score:** {F1_SCORE:.4f}"
+        )
+
+
+    # ========================================================
+    # TOP MODEL FEATURES
+    # ========================================================
+
+    st.subheader(
+        "📈 Top Model Features"
+    )
+
+
+    feature_df = get_top_features()
+
+
+    if not feature_df.empty:
+
+        chart_df = (
+            feature_df
+            .set_index("feature")
+        )
+
+        st.bar_chart(
+            chart_df[
+                "importance"
+            ]
+        )
+
+
+        with st.expander(
+            "View feature importance values"
+        ):
+
+            display_df = feature_df.copy()
+
+            display_df[
+                "importance"
+            ] = display_df[
+                "importance"
+            ].round(4)
+
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
             )
 
-            st.bar_chart(
-                importance_df
+    else:
+
+        st.info(
+            "Feature importance is unavailable."
+        )
+
+
+    # ========================================================
+    # MODEL EXPLANATION
+    # ========================================================
+
+    st.subheader(
+        "🔍 Model Explanation"
+    )
+
+
+    explanations = result.get(
+        "explanations",
+        []
+    )
+
+
+    if explanations:
+
+        for explanation in explanations:
+
+            st.markdown(
+                f"• {explanation}"
             )
 
-        except Exception as exc:
+    else:
 
-            st.warning(
-                f"Feature importance unavailable: {exc}"
-            )
+        st.markdown(
+            f"The model predicts "
+            f"**{prediction}** with a probability "
+            f"of **{probability:.2f}%**."
+        )
 
-        # ====================================================
-        # EXPLANATION
-        # ====================================================
+        st.markdown(
+            f"The resulting model risk category "
+            f"is **{risk}**."
+        )
+
+        st.markdown(
+            f"• The customer has "
+            f"{customer['previous']} previous "
+            f"campaign contact(s)."
+        )
+
+        st.markdown(
+            f"• The previous campaign outcome "
+            f"is **{customer['poutcome']}**."
+        )
+
+        st.markdown(
+            f"• The customer received "
+            f"{customer['campaign']} current "
+            f"campaign contact(s)."
+        )
+
+        st.markdown(
+            f"• The customer was contacted through "
+            f"the **{customer['contact']}** channel."
+        )
+
+        st.markdown(
+            f"• Current contact duration is "
+            f"{customer['duration']} seconds."
+        )
+
+        st.markdown(
+            f"• Customer age is "
+            f"{customer['age']}."
+        )
+
+        st.markdown(
+            f"• Customer account balance is "
+            f"{customer['balance']}."
+        )
+
+
+    # ========================================================
+    # TOP FEATURES IN EXPLANATION
+    # ========================================================
+
+    top_features = result.get(
+        "top_features",
+        []
+    )
+
+
+    if top_features:
 
         st.subheader(
-            "🔍 Model Explanation"
+            "🔬 Global Feature Importance"
         )
 
-        st.write(
-            f"The model predicts **{str(prediction).upper()}** "
-            f"with a probability of "
-            f"**{probability_percent:.2f}%**."
-        )
 
-        st.write(
-            f"The resulting model risk category is "
-            f"**{risk}**."
-        )
+        for number, feature in enumerate(
+            top_features,
+            start=1
+        ):
 
-        if previous == 0:
+            if isinstance(
+                feature,
+                dict
+            ):
 
-            st.write(
-                "• The customer has no previous campaign "
-                "contact history."
+                feature_name = feature.get(
+                    "feature",
+                    "Unknown"
+                )
+
+                importance = float(
+                    feature.get(
+                        "importance",
+                        0
+                    )
+                )
+
+            else:
+
+                feature_name = str(
+                    feature
+                )
+
+                importance = 0
+
+
+            st.markdown(
+                f"**{number}. "
+                f"{feature_name}** — "
+                f"{importance:.4f}"
             )
 
-        if poutcome == "unknown":
 
-            st.write(
-                "• There is no known outcome from a "
-                "previous campaign contact."
-            )
+    # ========================================================
+    # FINAL DECISION SUMMARY
+    # ========================================================
 
-        st.write(
-            f"• The customer has received "
-            f"{campaign} campaign contact(s)."
-        )
+    st.divider()
 
-        st.write(
-            f"• The customer was contacted through "
-            f"a {contact} communication channel."
-        )
+    st.subheader(
+        "📋 Final Decision Summary"
+    )
 
-        st.write(
-            f"• Current contact duration is "
-            f"{duration} seconds."
-        )
 
-        st.write(
-            f"• Customer age is {age}."
-        )
+    summary = pd.DataFrame(
+        {
+            "Decision Component": [
+                "Prediction",
+                "Probability",
+                "Risk Category",
+                "Priority",
+                "Recommended Action"
+            ],
+            "Result": [
+                prediction,
+                f"{probability:.2f}%",
+                risk,
+                priority,
+                result.get(
+                    "recommended_action",
+                    "N/A"
+                )
+            ]
+        }
+    )
 
-        st.write(
-            f"• Customer account balance is {balance}."
-        )
 
-    except Exception as exc:
+    st.dataframe(
+        summary,
+        use_container_width=True,
+        hide_index=True
+    )
 
-        st.error(
-            "Prediction failed."
-        )
 
-        st.exception(exc)
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.divider()
+
+st.caption(
+    "Enterprise Data Intelligence Platform | "
+    "ML + Business Rules + Explainability"
+)
