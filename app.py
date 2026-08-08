@@ -4,6 +4,7 @@ from src.profiling.metadata import MetadataExtractor
 from src.profiling.profiler import DataProfiler
 from src.profiling.quality import DataQualityEngine
 from src.profiling.column_profiler import ColumnProfiler
+from src.profiling.statistics import StatisticalAnalyzer
 
 
 def main():
@@ -66,6 +67,17 @@ def main():
     column_results = column_profiler.profile(df)
 
     column_profiler.display(column_results)
+
+
+    # ==============================
+    # 7. STATISTICAL INTELLIGENCE
+    # ==============================
+
+    statistical_analyzer = StatisticalAnalyzer()
+
+    statistical_results = statistical_analyzer.analyze(df)
+
+    statistical_analyzer.display(statistical_results)
 
 
 if __name__ == "__main__":
