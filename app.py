@@ -96,107 +96,6 @@ def find_method(obj, possible_names):
     return None
 
 
-def run_dataframe_operation(
-    obj,
-    possible_names,
-    df,
-    operation_name
-):
-    """
-    Execute a dataframe-processing method safely.
-
-    The project has multiple independent engines. Their exact
-    method names can differ, so this function checks the available
-    public API before execution.
-    """
-
-    method = find_method(
-        obj,
-        possible_names
-    )
-
-    if method is None:
-
-        logger.warning(
-            "%s method not found. "
-            "Skipping this stage.",
-            operation_name
-        )
-
-        return df
-
-    try:
-
-        result = method(df)
-
-        # ----------------------------------------------------
-        # Most engines return a dataframe.
-        # Some validation/reporting methods return None.
-        # ----------------------------------------------------
-
-        if isinstance(result, pd.DataFrame):
-
-            return result
-
-        if result is None:
-
-            return df
-
-        # Some feature engineering implementations may return
-        # a tuple such as (df, metadata).
-
-        if isinstance(result, tuple):
-
-            for item in result:
-
-                if isinstance(item, pd.DataFrame):
-
-                    return item
-
-        logger.warning(
-            "%s returned %s instead of DataFrame. "
-            "Keeping original dataframe.",
-            operation_name,
-            type(result).__name__
-        )
-
-        return df
-
-    except TypeError:
-
-        # Some engines expose methods that don't require df.
-        # Try a zero-argument call if possible.
-
-        try:
-
-            result = method()
-
-            if isinstance(result, pd.DataFrame):
-                return result
-
-            return df
-
-        except Exception as exc:
-
-            logger.warning(
-                "%s could not be executed: %s",
-                operation_name,
-                exc
-            )
-
-            return df
-
-    except Exception as exc:
-
-        logger.warning(
-            "%s failed: %s",
-            operation_name,
-            exc
-        )
-
-        return df
-
-
 # ============================================================
 # DATA INGESTION
 # ============================================================
@@ -205,22 +104,29 @@ def data_ingestion():
 
     print_section("DATA INGESTION")
 
+    logger.info("Starting data ingestion...")
+
+    # --------------------------------------------------------
+    # Check dataset
+    # --------------------------------------------------------
+
     if not DATA_FILE.exists():
 
         raise FileNotFoundError(
-            f"Dataset not found:\n{DATA_FILE}\n\n"
-            "Make sure bank-full.csv is located in the "
-            "project root."
+            f"Dataset not found:\n"
+            f"{DATA_FILE}\n\n"
+            f"Make sure bank-full.csv is located in "
+            f"the project root."
         )
 
-    logger.info(
-        "Starting data ingestion..."
-    )
+    # --------------------------------------------------------
+    # Initialize loader
+    # --------------------------------------------------------
 
     loader = DataLoader()
 
     # --------------------------------------------------------
-    # Try common loader APIs used by the project.
+    # Find loader method
     # --------------------------------------------------------
 
     method = find_method(
@@ -234,12 +140,15 @@ def data_ingestion():
         ]
     )
 
+    # --------------------------------------------------------
+    # Load data
+    # --------------------------------------------------------
+
     if method is None:
 
-        # Safe fallback.
         logger.warning(
-            "No supported DataLoader method found. "
-            "Using pandas CSV loading."
+            "No compatible DataLoader method found. "
+            "Using pandas directly."
         )
 
         df = pd.read_csv(
@@ -258,14 +167,17 @@ def data_ingestion():
         except TypeError:
 
             try:
-                df = method(DATA_FILE)
+
+                df = method(
+                    DATA_FILE
+                )
 
             except TypeError:
 
                 df = method()
 
     # --------------------------------------------------------
-    # Handle possible tuple/dict return values.
+    # Handle tuple return
     # --------------------------------------------------------
 
     if isinstance(df, tuple):
@@ -274,12 +186,19 @@ def data_ingestion():
 
         for item in df:
 
-            if isinstance(item, pd.DataFrame):
+            if isinstance(
+                item,
+                pd.DataFrame
+            ):
 
                 dataframe = item
                 break
 
         df = dataframe
+
+    # --------------------------------------------------------
+    # Handle dictionary return
+    # --------------------------------------------------------
 
     elif isinstance(df, dict):
 
@@ -287,22 +206,32 @@ def data_ingestion():
 
         for value in df.values():
 
-            if isinstance(value, pd.DataFrame):
+            if isinstance(
+                value,
+                pd.DataFrame
+            ):
 
                 dataframe = value
                 break
 
         df = dataframe
 
-    if not isinstance(df, pd.DataFrame):
+    # --------------------------------------------------------
+    # Validate DataFrame
+    # --------------------------------------------------------
+
+    if not isinstance(
+        df,
+        pd.DataFrame
+    ):
 
         raise TypeError(
-            "DataLoader did not return a pandas DataFrame."
+            "DataLoader did not return "
+            "a pandas DataFrame."
         )
 
     # --------------------------------------------------------
-    # Bank Marketing dataset is normally semicolon separated.
-    # If a single column was produced, retry correctly.
+    # Bank Marketing dataset normally uses ;
     # --------------------------------------------------------
 
     if len(df.columns) == 1:
@@ -315,6 +244,17 @@ def data_ingestion():
         df = pd.read_csv(
             DATA_FILE,
             sep=";"
+        )
+
+    # --------------------------------------------------------
+    # Validate target
+    # --------------------------------------------------------
+
+    if TARGET_COLUMN not in df.columns:
+
+        raise ValueError(
+            f"Target column '{TARGET_COLUMN}' "
+            f"not found in dataset."
         )
 
     print()
@@ -357,11 +297,13 @@ def data_validation(df):
     if method is not None:
 
         try:
+
             method(df)
 
         except TypeError:
 
             try:
+
                 method()
 
             except Exception as exc:
@@ -379,26 +321,23 @@ def data_validation(df):
             )
 
     # --------------------------------------------------------
-    # Universal validation summary.
+    # Universal validation summary
     # --------------------------------------------------------
 
     print()
 
     print(
-        "Rows              :",
-        len(df)
+        f"Rows              : {len(df)}"
     )
 
     print(
-        "Columns           :",
-        len(df.columns)
+        f"Columns           : {len(df.columns)}"
     )
 
     print()
 
     print(
-        "Duplicate Rows    :",
-        df.duplicated().sum()
+        f"Duplicate Rows    : {df.duplicated().sum()}"
     )
 
     print()
@@ -427,15 +366,22 @@ def data_validation(df):
         "Memory Usage"
     )
 
+    memory_kb = (
+        df.memory_usage(
+            deep=True
+        ).sum()
+        / 1024
+    )
+
     print(
-        f"{df.memory_usage(deep=True).sum() / 1024:.2f} KB"
+        f"{memory_kb:.2f} KB"
     )
 
     return df
 
 
 # ============================================================
-# PROFILING
+# DATA PROFILING
 # ============================================================
 
 def profiling(df):
@@ -462,11 +408,13 @@ def profiling(df):
     if method is not None:
 
         try:
+
             method(df)
 
         except TypeError:
 
             try:
+
                 method()
 
             except Exception as exc:
@@ -490,37 +438,37 @@ def profiling(df):
         )
 
     # --------------------------------------------------------
-    # Basic profiling fallback.
+    # Basic profiling
     # --------------------------------------------------------
 
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns.tolist()
+    numeric_columns = (
+        df.select_dtypes(
+            include="number"
+        ).columns.tolist()
+    )
 
-    categorical_columns = df.select_dtypes(
-        exclude="number"
-    ).columns.tolist()
+    categorical_columns = (
+        df.select_dtypes(
+            exclude="number"
+        ).columns.tolist()
+    )
 
     print()
 
     print(
-        "Rows             :",
-        len(df)
+        f"Rows             : {len(df)}"
     )
 
     print(
-        "Columns          :",
-        len(df.columns)
+        f"Columns          : {len(df.columns)}"
     )
 
     print(
-        "Numeric Columns  :",
-        len(numeric_columns)
+        f"Numeric Columns  : {len(numeric_columns)}"
     )
 
     print(
-        "Text Columns     :",
-        len(categorical_columns)
+        f"Text Columns     : {len(categorical_columns)}"
     )
 
     return df
@@ -554,11 +502,13 @@ def anomaly_analysis(df):
     if method is not None:
 
         try:
+
             method(df)
 
         except TypeError:
 
             try:
+
                 method()
 
             except Exception as exc:
@@ -617,6 +567,10 @@ def feature_engineering(df):
             "a supported feature-engineering method."
         )
 
+    # --------------------------------------------------------
+    # Execute feature engineering
+    # --------------------------------------------------------
+
     try:
 
         result = method(df)
@@ -626,42 +580,63 @@ def feature_engineering(df):
         result = method()
 
     # --------------------------------------------------------
-    # Extract dataframe.
+    # DataFrame result
     # --------------------------------------------------------
 
-    if isinstance(result, pd.DataFrame):
+    if isinstance(
+        result,
+        pd.DataFrame
+    ):
 
         df = result
 
-    elif isinstance(result, tuple):
+    # --------------------------------------------------------
+    # Tuple result
+    # --------------------------------------------------------
 
-        found = False
+    elif isinstance(
+        result,
+        tuple
+    ):
+
+        dataframe_found = False
 
         for item in result:
 
-            if isinstance(item, pd.DataFrame):
+            if isinstance(
+                item,
+                pd.DataFrame
+            ):
 
                 df = item
-                found = True
+                dataframe_found = True
                 break
 
-        if not found:
+        if not dataframe_found:
 
             raise TypeError(
                 "Feature engineering returned a tuple "
                 "without a DataFrame."
             )
 
+    # --------------------------------------------------------
+    # None means in-place modification
+    # --------------------------------------------------------
+
     elif result is None:
 
-        # Some engines modify df in place.
         pass
+
+    # --------------------------------------------------------
+    # Unsupported
+    # --------------------------------------------------------
 
     else:
 
         raise TypeError(
-            "Feature engineering returned an unsupported "
-            f"type: {type(result).__name__}"
+            "Feature engineering returned "
+            f"unsupported type: "
+            f"{type(result).__name__}"
         )
 
     print()
@@ -671,17 +646,21 @@ def feature_engineering(df):
     )
 
     print(
-        f"Dataset shape after feature engineering: "
+        "Dataset shape after feature engineering: "
         f"{df.shape}"
     )
 
     print()
 
-    print("Current columns:")
+    print(
+        "Current columns:"
+    )
 
     for column in df.columns:
 
-        print(f"• {column}")
+        print(
+            f"• {column}"
+        )
 
     return df
 
@@ -725,6 +704,7 @@ def feature_validation(df):
     except TypeError:
 
         try:
+
             method()
 
         except Exception as exc:
@@ -758,51 +738,44 @@ def baseline_model(df):
 
     trainer = ModelTrainer()
 
-    method = find_method(
-        trainer,
-        [
-            "train",
-            "run",
-            "fit",
-            "train_model",
-            "build_model"
-        ]
-    )
-
-    if method is None:
-
-        logger.warning(
-            "No compatible ModelTrainer method found."
-        )
-
-        return None
+    # --------------------------------------------------------
+    # IMPORTANT:
+    #
+    # ModelTrainer.run(df) is the complete training pipeline.
+    #
+    # It performs:
+    #
+    # prepare_data()
+    # build_preprocessor()
+    # split_data()
+    # build_model()
+    # train()
+    # evaluate()
+    #
+    # Therefore DO NOT call trainer.train(df).
+    # --------------------------------------------------------
 
     try:
 
-        result = method(df)
-
-    except TypeError:
-
-        try:
-            result = method()
-
-        except Exception as exc:
-
-            logger.warning(
-                "Baseline training warning: %s",
-                exc
-            )
-
-            return None
+        result = trainer.run(
+            df
+        )
 
     except Exception as exc:
 
-        logger.warning(
-            "Baseline training warning: %s",
-            exc
+        logger.exception(
+            "Baseline model training failed."
         )
 
-        return None
+        raise RuntimeError(
+            f"Baseline model training failed: {exc}"
+        ) from exc
+
+    print()
+
+    print(
+        "Baseline model training completed."
+    )
 
     return result
 
@@ -821,6 +794,10 @@ def model_comparison(df):
 
     comparator = ModelComparator()
 
+    # --------------------------------------------------------
+    # Run comparator
+    # --------------------------------------------------------
+
     comparison_output = comparator.run(
         df,
         test_size=TEST_SIZE,
@@ -828,7 +805,7 @@ def model_comparison(df):
     )
 
     # --------------------------------------------------------
-    # ModelComparator.run() from your actual code returns:
+    # ModelComparator from your project returns:
     #
     # {
     #     "results": DataFrame,
@@ -842,16 +819,22 @@ def model_comparison(df):
         dict
     ):
 
-        results_df = comparison_output.get(
-            "results"
+        results_df = (
+            comparison_output.get(
+                "results"
+            )
         )
 
-        best_model_name = comparison_output.get(
-            "best_model_name"
+        best_model_name = (
+            comparison_output.get(
+                "best_model_name"
+            )
         )
 
-        best_model = comparison_output.get(
-            "best_model"
+        best_model = (
+            comparison_output.get(
+                "best_model"
+            )
         )
 
     elif isinstance(
@@ -859,21 +842,23 @@ def model_comparison(df):
         pd.DataFrame
     ):
 
-        # Compatibility fallback if you later modify
-        # ModelComparator to return only the DataFrame.
-
         results_df = comparison_output
 
         best_model_name = None
+
         best_model = None
 
     else:
 
         raise TypeError(
-            "ModelComparator.run() must return either "
-            "a pandas DataFrame or a dictionary containing "
-            "'results'."
+            "ModelComparator.run() must return "
+            "a pandas DataFrame or a dictionary "
+            "containing 'results'."
         )
+
+    # --------------------------------------------------------
+    # Validate DataFrame
+    # --------------------------------------------------------
 
     if not isinstance(
         results_df,
@@ -883,6 +868,31 @@ def model_comparison(df):
         raise TypeError(
             "Model comparison results must be "
             "a pandas DataFrame."
+        )
+
+    # --------------------------------------------------------
+    # Required columns
+    # --------------------------------------------------------
+
+    required_columns = {
+        "model",
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "roc_auc"
+    }
+
+    missing_columns = (
+        required_columns
+        - set(results_df.columns)
+    )
+
+    if missing_columns:
+
+        raise ValueError(
+            "Model comparison results are missing "
+            f"columns: {sorted(missing_columns)}"
         )
 
     print()
@@ -896,7 +906,8 @@ def model_comparison(df):
     print(
         results_df.to_string(
             index=False,
-            float_format=lambda value: f"{value:.4f}"
+            float_format=lambda value:
+            f"{value:.4f}"
         )
     )
 
@@ -911,7 +922,9 @@ def model_comparison(df):
 # MODEL SELECTION
 # ============================================================
 
-def model_selection(comparison_output):
+def model_selection(
+    comparison_output
+):
 
     print_section("MODEL SELECTION")
 
@@ -920,10 +933,7 @@ def model_selection(comparison_output):
     )
 
     # --------------------------------------------------------
-    # IMPORTANT FIX
-    #
-    # ModelComparator returns a dictionary.
-    # ModelSelector requires a DataFrame.
+    # Extract DataFrame
     # --------------------------------------------------------
 
     if isinstance(
@@ -931,13 +941,23 @@ def model_selection(comparison_output):
         dict
     ):
 
-        comparison_results = comparison_output.get(
-            "results"
+        comparison_results = (
+            comparison_output.get(
+                "results"
+            )
         )
 
     else:
 
-        comparison_results = comparison_output
+        comparison_results = (
+            comparison_output
+        )
+
+    # --------------------------------------------------------
+    # IMPORTANT FIX:
+    #
+    # ModelSelector.select() requires a DataFrame.
+    # --------------------------------------------------------
 
     if not isinstance(
         comparison_results,
@@ -945,24 +965,23 @@ def model_selection(comparison_output):
     ):
 
         raise TypeError(
-            "Model comparison must provide a "
-            "pandas DataFrame under the 'results' key."
+            "Model comparison must provide "
+            "a pandas DataFrame under the "
+            "'results' key."
         )
 
     # --------------------------------------------------------
-    # F1 is a sensible default for this project because the
-    # target is imbalanced.
-    #
-    # However, recall is also important for identifying
-    # potential customers.
+    # Select based on F1
     # --------------------------------------------------------
 
     selector = ModelSelector(
         strategy="f1"
     )
 
-    selected_model_name = selector.select(
-        comparison_results
+    selected_model_name = (
+        selector.select(
+            comparison_results
+        )
     )
 
     selection_details = (
@@ -976,16 +995,20 @@ def model_selection(comparison_output):
     )
 
     print(
-        f"Selected model: {selected_model_name}"
+        f"Selected model: "
+        f"{selected_model_name}"
     )
 
     print(
-        f"Selection metric: F1"
+        "Selection metric: F1"
     )
 
     return {
-        "selected_model_name": selected_model_name,
-        "selection_details": selection_details
+        "selected_model_name":
+            selected_model_name,
+
+        "selection_details":
+            selection_details
     }
 
 
@@ -1003,27 +1026,52 @@ def final_summary(
         "ENTERPRISE PIPELINE SUMMARY"
     )
 
-    results_df = comparison_output[
-        "results"
-    ]
+    results_df = (
+        comparison_output[
+            "results"
+        ]
+    )
 
-    selected_model_name = selection_output[
-        "selected_model_name"
-    ]
+    selected_model_name = (
+        selection_output[
+            "selected_model_name"
+        ]
+    )
 
-    selected_row = results_df[
+    # --------------------------------------------------------
+    # Locate selected model
+    # --------------------------------------------------------
+
+    selected_rows = results_df[
         results_df["model"]
         == selected_model_name
-    ].iloc[0]
+    ]
+
+    if selected_rows.empty:
+
+        raise ValueError(
+            f"Selected model '{selected_model_name}' "
+            "was not found in comparison results."
+        )
+
+    selected_row = (
+        selected_rows.iloc[0]
+    )
+
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
 
     print()
 
     print(
-        f"Dataset rows       : {len(df)}"
+        f"Dataset rows       : "
+        f"{len(df)}"
     )
 
     print(
-        f"Dataset columns    : {len(df.columns)}"
+        f"Dataset columns    : "
+        f"{len(df.columns)}"
     )
 
     print()
@@ -1033,7 +1081,8 @@ def final_summary(
     )
 
     print(
-        f"Model      : {selected_model_name}"
+        f"Model      : "
+        f"{selected_model_name}"
     )
 
     print(
@@ -1078,16 +1127,23 @@ def main():
     try:
 
         print()
-        print("=" * 70)
+
+        print(
+            "=" * 70
+        )
+
         print(
             "       ENTERPRISE DATA INTELLIGENCE PLATFORM"
         )
-        print("=" * 70)
+
+        print(
+            "=" * 70
+        )
 
         print()
 
         # ----------------------------------------------------
-        # 1. INGESTION
+        # 1. DATA INGESTION
         # ----------------------------------------------------
 
         df = data_ingestion()
@@ -1101,7 +1157,7 @@ def main():
         )
 
         # ----------------------------------------------------
-        # 3. PROFILING
+        # 3. DATA PROFILING
         # ----------------------------------------------------
 
         df = profiling(
@@ -1139,6 +1195,10 @@ def main():
         baseline_result = baseline_model(
             df
         )
+
+        # Prevent unused-variable issues while keeping the
+        # baseline result available for future reporting.
+        _ = baseline_result
 
         # ----------------------------------------------------
         # 8. MODEL COMPARISON
