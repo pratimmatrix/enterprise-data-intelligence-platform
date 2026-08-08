@@ -74,7 +74,7 @@ class DataLoader:
 
         logger.info(f"Loading CSV file: {path.name}")
 
-        return pd.read_csv(path)
+        return pd.read_csv(path, sep=None, engine="python")
 
     def _load_excel(self, path: Path) -> pd.DataFrame:
         """
