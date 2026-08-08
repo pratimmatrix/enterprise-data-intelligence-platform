@@ -1,5 +1,6 @@
 from src.modeling.ModelPredictor import ModelPredictor
 from src.business_rules.BusinessRuleEngine import BusinessRuleEngine
+from src.insights.InsightEngine import InsightEngine
 
 
 class DecisionEngine:
@@ -8,9 +9,23 @@ class DecisionEngine:
 
         print("DecisionEngine initialized.")
 
+        # ----------------------------------------------------
+        # ML PREDICTOR
+        # ----------------------------------------------------
+
         self.predictor = ModelPredictor()
 
+        # ----------------------------------------------------
+        # BUSINESS RULE ENGINE
+        # ----------------------------------------------------
+
         self.business_rules = BusinessRuleEngine()
+
+        # ----------------------------------------------------
+        # INSIGHT ENGINE
+        # ----------------------------------------------------
+
+        self.insight_engine = InsightEngine()
 
     # ========================================================
     # RUN DECISION
@@ -26,9 +41,9 @@ class DecisionEngine:
         print("                  DECISION ENGINE")
         print("=" * 70)
 
-        # ----------------------------------------------------
+        # ====================================================
         # STEP 1: ML PREDICTION
-        # ----------------------------------------------------
+        # ====================================================
 
         print()
         print("Step 1: Generating ML prediction...")
@@ -47,9 +62,9 @@ class DecisionEngine:
             f"{prediction['probability_percent']}%"
         )
 
-        # ----------------------------------------------------
+        # ====================================================
         # STEP 2: BUSINESS RULES
-        # ----------------------------------------------------
+        # ====================================================
 
         print()
         print("Step 2: Applying business rules...")
@@ -70,9 +85,9 @@ class DecisionEngine:
             f"{business_decision['recommended_action']}"
         )
 
-        # ----------------------------------------------------
-        # STEP 3: COMBINE RESULTS
-        # ----------------------------------------------------
+        # ====================================================
+        # STEP 3: COMBINE ML + BUSINESS DECISION
+        # ====================================================
 
         final_result = {
 
@@ -97,6 +112,23 @@ class DecisionEngine:
                 ]
         }
 
+        # ====================================================
+        # STEP 4: GENERATE BUSINESS INSIGHTS
+        # ====================================================
+
+        print()
+        print("Step 3: Generating business insights...")
+
+        insight_result = (
+            self.insight_engine.generate_insights(
+                final_result
+            )
+        )
+
+        final_result["insights"] = (
+            insight_result["insights"]
+        )
+
         return final_result
 
 
@@ -105,6 +137,10 @@ class DecisionEngine:
 # ============================================================
 
 if __name__ == "__main__":
+
+    # --------------------------------------------------------
+    # Initialize Decision Engine
+    # --------------------------------------------------------
 
     engine = DecisionEngine()
 
@@ -167,17 +203,17 @@ if __name__ == "__main__":
         "previous_success": 0
     }
 
-    # --------------------------------------------------------
-    # Run complete decision
-    # --------------------------------------------------------
+    # ========================================================
+    # RUN COMPLETE DECISION PIPELINE
+    # ========================================================
 
     result = engine.run(
         customer
     )
 
-    # --------------------------------------------------------
-    # Final result
-    # --------------------------------------------------------
+    # ========================================================
+    # FINAL DECISION
+    # ========================================================
 
     print()
     print("=" * 70)
@@ -211,5 +247,20 @@ if __name__ == "__main__":
         f"{result['recommended_action']}"
     )
 
+    # ========================================================
+    # BUSINESS INSIGHTS
+    # ========================================================
+
     print()
+
+    print("Insights:")
+
+    for insight in result["insights"]:
+
+        print(
+            f"  • {insight}"
+        )
+
+    print()
+
     print("=" * 70)
